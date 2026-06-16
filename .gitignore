@@ -2,3 +2,6 @@
 .DS_Store
 .DS_Store?
 ._*
+
+# Ignore environment variables / secrets files
+.env
