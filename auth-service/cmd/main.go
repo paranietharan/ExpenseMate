@@ -52,6 +52,9 @@ func main() {
 	mux.HandleFunc("/mfa/email/disable", authHandler.DisableEmailMFA)
 	mux.HandleFunc("/logout", authHandler.Logout)
 	mux.HandleFunc("/status", authHandler.Status)
+	mux.HandleFunc("/password-reset/request", authHandler.RequestPasswordReset)
+	mux.HandleFunc("/password-reset/verify", authHandler.VerifyPasswordReset)
+	mux.HandleFunc("/password/change", authHandler.ChangePassword)
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
