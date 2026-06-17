@@ -754,3 +754,163 @@ func (h *AuthHandler) Status(w http.ResponseWriter, r *http.Request) {
 		"email_mfa_enabled": emailEnabled,
 	})
 }
+
+func (h *AuthHandler) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req dto.PasswordResetRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+	if req.Email == "" {
+		http.Error(w, "Email is required", http.StatusBadRequest)
+		return
+	}
+
+	// Verify user exists
+	var userID string
+	err := h.DB.QueryRow("SELECT id FROM users WHERE email = $1", req.Email).Scan(&userID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// For security, do not leak user existence. Still print or say success.
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"message": "If the email is registered, a password reset code has been sent."})
+			return
+		}
+		log.Printf("Failed to verify user email: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	code, err := generateEmailCode()
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	pendingKey := fmt.Sprintf("password_reset_code:%s", req.Email)
+	err = h.RedisClient.Set(r.Context(), pendingKey, code, 15*time.Minute).Err()
+	if err != nil {
+		log.Printf("Failed to cache password reset code: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if h.PrintMFACodes {
+		log.Printf("[PASSWORD RESET] Verification Code for user %s: %s\n", req.Email, code)
+		fmt.Printf("\n--- [EMAIL OUTBOX SIMULATOR - PASSWORD RESET] ---\nTo: %s\nSubject: ExpenseMate Password Reset Code\nCode: %s\n-------------------------------------------------\n\n", req.Email, code)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "If the email is registered, a password reset code has been sent."})
+}
+
+func (h *AuthHandler) VerifyPasswordReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req dto.PasswordResetVerifyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+	req.Code = strings.TrimSpace(req.Code)
+	if req.Email == "" || req.Code == "" || len(req.NewPassword) < 8 {
+		http.Error(w, "Email, code and a password with min 8 characters are required", http.StatusBadRequest)
+		return
+	}
+
+	pendingKey := fmt.Sprintf("password_reset_code:%s", req.Email)
+	cachedCode, err := h.RedisClient.Get(r.Context(), pendingKey).Result()
+	if err != nil {
+		http.Error(w, "Verification code expired or not found", http.StatusBadRequest)
+		return
+	}
+
+	if cachedCode != req.Code {
+		http.Error(w, "Invalid verification code", http.StatusUnauthorized)
+		return
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	query := "UPDATE users SET password_hash = $1, updated_at = NOW() WHERE email = $2"
+	_, err = h.DB.Exec(query, string(hashedPassword), req.Email)
+	if err != nil {
+		log.Printf("Failed to update password: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	_ = h.RedisClient.Del(r.Context(), pendingKey).Err()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Password has been reset successfully. You can now login."})
+}
+
+func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, err := h.getAuthenticatedUserID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	var req dto.PasswordChangeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.OldPassword == "" || len(req.NewPassword) < 8 {
+		http.Error(w, "Old password and new password (min 8 characters) are required", http.StatusBadRequest)
+		return
+	}
+
+	var passwordHash string
+	err = h.DB.QueryRow("SELECT password_hash FROM users WHERE id = $1", userID).Scan(&passwordHash)
+	if err != nil {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(req.OldPassword)); err != nil {
+		http.Error(w, "Invalid old password", http.StatusUnauthorized)
+		return
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	_, err = h.DB.Exec("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2", string(hashedPassword), userID)
+	if err != nil {
+		log.Printf("Failed to change password: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Password changed successfully"})
+}
+

@@ -42,11 +42,67 @@ export default function Dashboard() {
   const [showEmailSetup, setShowEmailSetup] = useState(false);
   const [emailCode, setEmailCode] = useState("");
 
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
   const [actionLoading, setActionLoading] = useState(false);
 
   // Alerts
   const [alertMessage, setAlertMessage] = useState("");
   const [alertType, setAlertType] = useState<"success" | "error" | "warning">("error");
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAlertMessage("");
+
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      setAlertType("warning");
+      setAlertMessage("All fields are required.");
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      setAlertType("warning");
+      setAlertMessage("New password must be at least 8 characters long.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setAlertType("warning");
+      setAlertMessage("New passwords do not match.");
+      return;
+    }
+
+    setActionLoading(true);
+    try {
+      const res = await fetch("/api/v1/auth/password/change", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          old_password: oldPassword,
+          new_password: newPassword,
+        }),
+      });
+
+      if (res.ok) {
+        setAlertType("success");
+        setAlertMessage("Password changed successfully!");
+        setOldPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+      } else {
+        const errMsg = await res.text();
+        setAlertType("error");
+        setAlertMessage(errMsg || "Failed to change password.");
+      }
+    } catch (err) {
+      setAlertType("error");
+      setAlertMessage("Network error. Please check your connection.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   // Redirect to login if unauthorized
   useEffect(() => {
@@ -489,6 +545,76 @@ export default function Dashboard() {
                 )}
               </>
             )}
+          </div>
+
+          {/* Change Password Card */}
+          <div className="glass-panel p-6 rounded-2xl border border-white/5 space-y-6">
+            <div>
+              <h3 className="text-base font-bold text-white">Change Password</h3>
+              <p className="text-xs text-zinc-400 mt-1">Update your account login password.</p>
+            </div>
+
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label htmlFor="old-password" className="block text-[10px] font-bold text-zinc-500 tracking-wider uppercase mb-2">
+                    Current Password
+                  </label>
+                  <input
+                    id="old-password"
+                    type="password"
+                    required
+                    disabled={actionLoading}
+                    value={oldPassword}
+                    onChange={(e) => setOldPassword(e.target.value)}
+                    className="w-full px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-white placeholder-zinc-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 text-sm"
+                    placeholder="••••••••"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="new-password-change" className="block text-[10px] font-bold text-zinc-500 tracking-wider uppercase mb-2">
+                    New Password
+                  </label>
+                  <input
+                    id="new-password-change"
+                    type="password"
+                    required
+                    disabled={actionLoading}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-white placeholder-zinc-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 text-sm"
+                    placeholder="••••••••"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="confirm-password-change" className="block text-[10px] font-bold text-zinc-500 tracking-wider uppercase mb-2">
+                    Confirm New Password
+                  </label>
+                  <input
+                    id="confirm-password-change"
+                    type="password"
+                    required
+                    disabled={actionLoading}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-white placeholder-zinc-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 text-sm"
+                    placeholder="••••••••"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="submit"
+                  disabled={actionLoading}
+                  className="px-5 py-2.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer disabled:opacity-50"
+                >
+                  {actionLoading ? "Updating..." : "Update Password"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       </div>

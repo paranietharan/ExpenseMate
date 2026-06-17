@@ -52,3 +52,19 @@ type LoginResponse struct {
 	Message string `json:"message"`
 	UserID  string `json:"user_id"`
 }
+
+type PasswordResetRequest struct {
+	Email string `json:"email"`
+}
+
+type PasswordResetVerifyRequest struct {
+	Email       string `json:"email"`
+	Code        string `json:"code"`
+	NewPassword string `json:"new_password"`
+}
+
+type PasswordChangeRequest struct {
+	OldPassword string `json:"old_password"`
+	NewPassword string `json:"new_password"`
+}
+
