@@ -460,16 +460,21 @@ func (h *ExpenseHandler) GetBalances(w http.ResponseWriter, r *http.Request) {
 			var pID, pEmail, payeeID, payeeEmail string
 			var amount float64
 			if err := setRows.Scan(&pID, &pEmail, &payeeID, &payeeEmail, &amount); err == nil {
+				// User is payer: user paid someone (payee) → user is reducing debt they owe
+				// This decreases how much user is owed by payee (payee's balance goes down)
 				if pID == userID {
 					if _, ok := balancesMap[payeeEmail]; !ok {
 						balancesMap[payeeEmail] = &dto.DebtBalance{UserID: payeeID, UserEmail: payeeEmail, Balance: 0}
 					}
-					balancesMap[payeeEmail].Balance += amount
+					// User paid payee → payee is owed less by user → payee's balance towards user decreases
+					balancesMap[payeeEmail].Balance -= amount
 				} else if payeeID == userID {
+					// User is payee: someone (payer) paid user → payer's debt to user decreases
 					if _, ok := balancesMap[pEmail]; !ok {
 						balancesMap[pEmail] = &dto.DebtBalance{UserID: pID, UserEmail: pEmail, Balance: 0}
 					}
-					balancesMap[pEmail].Balance -= amount
+					// Payer paid user → payer owes user less → payer's balance towards user increases (cancels debt)
+					balancesMap[pEmail].Balance += amount
 				}
 			}
 		}

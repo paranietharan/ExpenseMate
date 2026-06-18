@@ -618,7 +618,12 @@ export default function Dashboard() {
 
         {/* Action buttons */}
         <div className="flex gap-2 px-1 mb-4 flex-shrink-0 overflow-x-auto pb-1">
-          <button onClick={() => { setSettlementPayeeEmail(selectedFriend.email); setSettlementAmount(bal && bal.balance < 0 ? Math.abs(bal.balance).toString() : ""); setShowSettleModal(true); }} className="flex-shrink-0 px-4 py-2 rounded-full bg-teal-600 hover:bg-teal-500 text-sm font-bold text-white cursor-pointer transition-colors">Settle up</button>
+          <button onClick={() => { 
+            setSettlementPayeeEmail(selectedFriend.email); 
+            // Pre-fill with what user owes (negative balance), or 0 if they owe user
+            setSettlementAmount(bal && bal.balance < 0 ? Math.abs(bal.balance).toFixed(2) : ""); 
+            setShowSettleModal(true); 
+          }} className="flex-shrink-0 px-4 py-2 rounded-full bg-teal-600 hover:bg-teal-500 text-sm font-bold text-white cursor-pointer transition-colors">Settle up</button>
           <button onClick={() => openExpenseModal(selectedFriend.email)} className="flex-shrink-0 px-4 py-2 rounded-full bg-zinc-800 hover:bg-zinc-700 text-sm font-semibold text-white border border-zinc-600 cursor-pointer transition-colors">Add expense</button>
           <button onClick={() => handleBlock(selectedFriend.user_id)} className="flex-shrink-0 px-4 py-2 rounded-full bg-zinc-800 hover:bg-rose-900/30 text-sm font-semibold text-zinc-400 hover:text-rose-400 border border-zinc-700 cursor-pointer transition-colors">Block</button>
         </div>
@@ -826,26 +831,19 @@ export default function Dashboard() {
                     {!bal && <span className="text-xs text-zinc-600 flex-shrink-0">settled up</span>}
                   </div>
 
-                  {/* Inline balance breakdown (like Splitwise) */}
-                  {bal && friendExpenses.length > 0 && (
-                    <div className="ml-14 mt-1.5 space-y-0.5">
-                      {expenses.filter(ex => {
-                        const myShare = ex.splits.find(s => s.user_email === user?.email);
-                        const theirShare = ex.splits.find(s => s.user_email === f.email);
-                        return (myShare || theirShare) && (ex.payer_email === user?.email || ex.payer_email === f.email);
-                      }).slice(0, 3).map(ex => {
-                        const myShare = ex.splits.find(s => s.user_email === user?.email);
-                        const theirShare = ex.splits.find(s => s.user_email === f.email);
-                        const iPaid = ex.payer_email === user?.email;
-                        const theyPaid = ex.payer_email === f.email;
-
-                        let text = "";
-                        let color = "text-zinc-500";
-                        if (iPaid && theirShare) { text = `${f.name || "They"} owes you $${theirShare.amount.toFixed(2)} for "${ex.description}"`; color = "text-zinc-500"; }
-                        else if (theyPaid && myShare) { text = `You owe ${f.name || "them"} $${myShare.amount.toFixed(2)} for "${ex.description}"`; color = "text-rose-500/70"; }
-                        if (!text) return null;
-                        return <p key={ex.id} className={`text-[10px] ${color} truncate`}>{text}</p>;
-                      })}
+                  {/* Inline balance breakdown — derived from authoritative net balance */}
+                  {bal && (
+                    <div className="ml-14 mt-1 space-y-0.5">
+                      {bal.balance > 0 && (
+                        <p className="text-[10px] text-zinc-500 truncate">
+                          {f.name || f.email.split("@")[0]} owes you <span className="text-teal-400/80">${bal.balance.toFixed(2)}</span> overall
+                        </p>
+                      )}
+                      {bal.balance < 0 && (
+                        <p className="text-[10px] text-zinc-500 truncate">
+                          You owe {f.name || f.email.split("@")[0]} <span className="text-rose-400/80">${Math.abs(bal.balance).toFixed(2)}</span> overall
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
