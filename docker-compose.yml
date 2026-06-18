@@ -142,18 +142,17 @@ services:
       context: ./notification-service
       dockerfile: Dockerfile
     container_name: notification-service
+    env_file:
+      - ./notification-service/.env
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: ${RABBITMQ_USER:-admin}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-RabbitMQPassword@1234}
       EXPENSE_SERVICE_URL: http://expense-service:8082
-      SMTP_HOST: ${SMTP_HOST}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER}
-      SMTP_PASS: ${SMTP_PASS}
-      SMTP_FROM: ${SMTP_FROM}
     restart: unless-stopped
+    volumes:
+      - ./notification-service/outbox:/app/outbox
     depends_on:
       rabbitmq:
         condition: service_healthy
