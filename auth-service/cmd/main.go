@@ -71,6 +71,23 @@ func main() {
 	mux.HandleFunc("/password-reset/verify", authHandler.VerifyPasswordReset)
 	mux.HandleFunc("/password/change", authHandler.ChangePassword)
 
+	// Profile management endpoints
+	mux.HandleFunc("/profile/change-name", authHandler.ChangeName)
+	mux.HandleFunc("/profile/change-avatar", authHandler.ChangeAvatar)
+	mux.HandleFunc("/profile/change-email/request", authHandler.RequestEmailChange)
+	mux.HandleFunc("/profile/change-email/verify", authHandler.VerifyEmailChange)
+
+	// Friends and blocking management endpoints
+	mux.HandleFunc("/friends/search", authHandler.SearchFriend)
+	mux.HandleFunc("/friends/request", authHandler.SendFriendRequest)
+	mux.HandleFunc("/friends/accept", authHandler.AcceptFriendRequest)
+	mux.HandleFunc("/friends/reject", authHandler.RejectFriendRequest)
+	mux.HandleFunc("/friends/block", authHandler.BlockUser)
+	mux.HandleFunc("/friends/unblock", authHandler.UnblockUser)
+	mux.HandleFunc("/friends/list", authHandler.ListFriends)
+	mux.HandleFunc("/friends/blocked", authHandler.ListBlockedUsers)
+	mux.HandleFunc("/friends/requests", authHandler.ListFriendRequests)
+
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()

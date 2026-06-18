@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"net/http"
 	"net/smtp"
 	"os"
 	"path/filepath"
@@ -24,9 +25,13 @@ type NotificationEvent struct {
 }
 
 type EmailData struct {
-	Email string
-	Code  string
-	Date  string
+	Email       string
+	Code        string
+	Date        string
+	SenderEmail string
+	Description string
+	Amount      string
+	PayeeEmail  string
 }
 
 func getenv(key, def string) string {
@@ -35,6 +40,34 @@ func getenv(key, def string) string {
 		return def
 	}
 	return val
+}
+
+func isNotificationEnabled(expenseServiceURL, email string) bool {
+	client := http.Client{
+		Timeout: 2 * time.Second,
+	}
+	url := fmt.Sprintf("%s/settings?email=%s", expenseServiceURL, email)
+	resp, err := client.Get(url)
+	if err != nil {
+		log.Printf("[Notification Settings Check] Error calling expense-service: %v. Defaulting to enabled.", err)
+		return true // fail-open for alerts if service check fails
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("[Notification Settings Check] Bad status code: %d. Defaulting to enabled.", resp.StatusCode)
+		return true
+	}
+
+	var data struct {
+		NotificationsEnabled bool `json:"notifications_enabled"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		log.Printf("[Notification Settings Check] JSON decode error: %v. Defaulting to enabled.", err)
+		return true
+	}
+
+	return data.NotificationsEnabled
 }
 
 func main() {
@@ -122,12 +155,25 @@ func main() {
 				continue
 			}
 
+			// Toggles notifications validation check on friend request, expense adding, and settlements
+			if event.EventType == "friend_request" || event.EventType == "expense_added" || event.EventType == "settlement_added" {
+				expenseServiceURL := getenv("EXPENSE_SERVICE_URL", "http://127.0.0.1:8082")
+				if !isNotificationEnabled(expenseServiceURL, event.Email) {
+					log.Printf("[Notification Service] Skipping sending email for event '%s' to %s because user settings has email notifications disabled.\n", event.EventType, event.Email)
+					continue
+				}
+			}
+
 			subject := getSubject(event)
 
 			data := EmailData{
-				Email: event.Email,
-				Code:  event.Metadata["code"],
-				Date:  event.Timestamp.Local().Format(time.RFC1123),
+				Email:       event.Email,
+				Code:        event.Metadata["code"],
+				Date:        event.Timestamp.Local().Format(time.RFC1123),
+				SenderEmail: event.Metadata["sender_email"],
+				Description: event.Metadata["description"],
+				Amount:      event.Metadata["amount"],
+				PayeeEmail:  event.Metadata["payee_email"],
 			}
 
 			htmlContent, err := renderTemplate(event.EventType, data)
@@ -174,6 +220,12 @@ func getSubject(event NotificationEvent) string {
 		return "MFA Enabled: Email Challenges"
 	case "disable_email_2fa":
 		return "SECURITY WARNING: Email MFA Disabled"
+	case "friend_request":
+		return fmt.Sprintf("New Friend Request from %s", event.Metadata["sender_email"])
+	case "expense_added":
+		return fmt.Sprintf("New Shared Bill Added: %s", event.Metadata["description"])
+	case "settlement_added":
+		return fmt.Sprintf("Balance Settled: %s paid %s", event.Metadata["sender_email"], event.Metadata["payee_email"])
 	default:
 		return fmt.Sprintf("ExpenseMate Notification: %s", event.EventType)
 	}
