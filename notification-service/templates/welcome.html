@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to ExpenseMate!</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f8fafc;
+            margin: 0;
+            padding: 0;
+            -webkit-font-smoothing: antialiased;
+        }
+        .wrapper {
+            width: 100%;
+            table-layout: fixed;
+            background-color: #f8fafc;
+            padding: 40px 0;
+        }
+        .container {
+            max-width: 580px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 16px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.025);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #6366f1 0%, #ec4899 100%);
+            padding: 32px;
+            text-align: center;
+        }
+        .header h1 {
+            color: #ffffff;
+            font-size: 26px;
+            font-weight: 700;
+            margin: 0;
+            letter-spacing: -0.5px;
+        }
+        .content {
+            padding: 40px 32px;
+        }
+        .content h2 {
+            color: #1e293b;
+            font-size: 22px;
+            font-weight: 600;
+            margin: 0 0 16px 0;
+        }
+        .content p {
+            color: #334155;
+            font-size: 16px;
+            line-height: 1.6;
+            margin: 0 0 24px 0;
+        }
+        .features-list {
+            background-color: #f8fafc;
+            border-radius: 12px;
+            padding: 24px;
+            margin: 28px 0;
+            border: 1px solid #e2e8f0;
+        }
+        .feature-item {
+            margin-bottom: 16px;
+        }
+        .feature-item:last-child {
+            margin-bottom: 0;
+        }
+        .feature-title {
+            font-weight: 600;
+            color: #1e293b;
+            font-size: 15px;
+            margin-bottom: 4px;
+        }
+        .feature-desc {
+            color: #64748b;
+            font-size: 14px;
+            margin: 0;
+        }
+        .footer {
+            background-color: #f8fafc;
+            padding: 24px 32px;
+            border-top: 1px solid #e2e8f0;
+            text-align: center;
+        }
+        .footer p {
+            font-size: 13px;
+            color: #64748b;
+            line-height: 1.5;
+            margin: 0 0 8px 0;
+        }
+        .footer a {
+            color: #6366f1;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 9999px;
+            background-color: rgba(99, 102, 241, 0.15);
+            color: #6366f1;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+        .cta-button {
+            display: inline-block;
+            background-color: #6366f1;
+            color: #ffffff;
+            font-weight: 600;
+            padding: 12px 28px;
+            border-radius: 8px;
+            text-decoration: none;
+            text-align: center;
+            font-size: 15px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="container">
+            <div class="header">
+                <h1>ExpenseMate</h1>
+            </div>
+            <div class="content">
+                <div class="badge">Welcome onboard</div>
+                <h2>Your account is verified!</h2>
+                <p>Hello,</p>
+                <p>Welcome to ExpenseMate! Your email address (<strong>{{.Email}}</strong>) has been successfully verified, and your account is now fully active.</p>
+                <p>Here is a quick look at what you can do next:</p>
+                
+                <div class="features-list">
+                    <div class="feature-item">
+                        <div class="feature-title">💸 Create Expense Groups</div>
+                        <p class="feature-desc">Set up groups for roommates, trips, partners, or project teams to keep track of shared costs.</p>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-title">📊 Split Bills Easily</div>
+                        <p class="feature-desc">Split expenses equally, by percentages, or specific shares. No more manual calculations.</p>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-title">🔄 Settle Balances</div>
+                        <p class="feature-desc">Record payments, clear debts, and see exactly who owes whom in real-time.</p>
+                    </div>
+                </div>
+
+                <p>Get started right now by logging into your dashboard:</p>
+                <div style="text-align: center;">
+                    <a href="http://localhost:3000" class="cta-button" style="color: #ffffff;">Go to Dashboard</a>
+                </div>
+            </div>
+            <div class="footer">
+                <p>Sent to {{.Email}}</p>
+                <p>&copy; 2026 ExpenseMate. All rights reserved.</p>
+                <p><a href="https://expensemate.com">expensemate.com</a></p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

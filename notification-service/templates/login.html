@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Alert: New Sign-in Detected</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f8fafc;
+            margin: 0;
+            padding: 0;
+            -webkit-font-smoothing: antialiased;
+        }
+        .wrapper {
+            width: 100%;
+            table-layout: fixed;
+            background-color: #f8fafc;
+            padding: 40px 0;
+        }
+        .container {
+            max-width: 580px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 16px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.025);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #1e293b 0%, #475569 100%);
+            padding: 32px;
+            text-align: center;
+        }
+        .header h1 {
+            color: #ffffff;
+            font-size: 26px;
+            font-weight: 700;
+            margin: 0;
+            letter-spacing: -0.5px;
+        }
+        .content {
+            padding: 40px 32px;
+        }
+        .content p {
+            color: #334155;
+            font-size: 16px;
+            line-height: 1.6;
+            margin: 0 0 24px 0;
+        }
+        .info-box {
+            background-color: #f8fafc;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 28px 0;
+            border: 1px solid #e2e8f0;
+        }
+        .info-row {
+            display: flex;
+            margin-bottom: 12px;
+            font-size: 15px;
+        }
+        .info-row:last-child {
+            margin-bottom: 0;
+        }
+        .info-label {
+            width: 120px;
+            font-weight: 600;
+            color: #64748b;
+        }
+        .info-value {
+            color: #1e293b;
+            flex-grow: 1;
+        }
+        .warning-box {
+            background-color: #fffbeb;
+            border-left: 4px solid #f59e0b;
+            border-radius: 6px;
+            padding: 16px;
+            margin-top: 24px;
+        }
+        .warning-box p {
+            font-size: 14px;
+            color: #b45309;
+            margin: 0;
+            line-height: 1.5;
+        }
+        .footer {
+            background-color: #f8fafc;
+            padding: 24px 32px;
+            border-top: 1px solid #e2e8f0;
+            text-align: center;
+        }
+        .footer p {
+            font-size: 13px;
+            color: #64748b;
+            line-height: 1.5;
+            margin: 0 0 8px 0;
+        }
+        .footer a {
+            color: #6366f1;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 9999px;
+            background-color: rgba(245, 158, 11, 0.15);
+            color: #d97706;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="container">
+            <div class="header">
+                <h1>ExpenseMate Security</h1>
+            </div>
+            <div class="content">
+                <div class="badge">Security Alert</div>
+                <p>Hello,</p>
+                <p>We detected a new login to your ExpenseMate account. Please review the details of the login event below:</p>
+                
+                <div class="info-box">
+                    <table style="width: 100%; font-size: 15px; border-collapse: collapse;">
+                        <tr>
+                            <td style="width: 100px; padding: 6px 0; font-weight: 600; color: #64748b;">Account:</td>
+                            <td style="padding: 6px 0; color: #1e293b;">{{.Email}}</td>
+                        </tr>
+                        <tr>
+                            <td style="width: 100px; padding: 6px 0; font-weight: 600; color: #64748b;">Time:</td>
+                            <td style="padding: 6px 0; color: #1e293b;">{{.Date}}</td>
+                        </tr>
+                    </table>
+                </div>
+
+                <div class="warning-box">
+                    <p><strong>Did not authorize this sign-in?</strong><br>
+                    If this wasn't you, someone else may have obtained your credentials. You should change your password immediately and check your profile settings to protect your account.</p>
+                </div>
+            </div>
+            <div class="footer">
+                <p>Sent to {{.Email}}</p>
+                <p>&copy; 2026 ExpenseMate. All rights reserved.</p>
+                <p><a href="https://expensemate.com">expensemate.com</a></p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
