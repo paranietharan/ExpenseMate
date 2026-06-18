@@ -61,6 +61,12 @@ func NewGatewayServer(authURL, expenseURL string, rdb *redis.Client) (*GatewaySe
 	expenseProxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(eURL)
+			path := pr.Out.URL.Path
+			if strings.HasPrefix(path, "/api/v1") {
+				pr.Out.URL.Path = strings.TrimPrefix(path, "/api/v1")
+			} else if strings.HasPrefix(path, "/api") {
+				pr.Out.URL.Path = strings.TrimPrefix(path, "/api")
+			}
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			log.Printf("Expense service proxy error: %v", err)
@@ -127,7 +133,11 @@ func (h *GatewayServer) AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
+		userEmail := data["email"]
 		r.Header.Set("X-User-ID", userID)
+		if userEmail != "" {
+			r.Header.Set("X-User-Email", userEmail)
+		}
 		r.Header.Del("Cookie")
 		next.ServeHTTP(w, r)
 	})

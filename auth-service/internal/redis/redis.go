@@ -37,10 +37,11 @@ func InitRedis(host, port, password string) (*redis.Client, error) {
 	return Client, nil
 }
 
-func SaveSession(sessionID, userID string, ttl time.Duration) error {
+func SaveSession(sessionID, userID, email string, ttl time.Duration) error {
 	key := fmt.Sprintf("session:%s", sessionID)
 	data := map[string]string{
 		"user_id": userID,
+		"email":   email,
 	}
 
 	jsonData, err := json.Marshal(data)

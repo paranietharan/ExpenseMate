@@ -1,6 +1,5 @@
-version: '3.8'
-
 services:
+  # --- INFRASTRUCTURE SERVICES ---
   auth-db:
     image: postgres:15-alpine
     container_name: auth-db
@@ -8,8 +7,6 @@ services:
       POSTGRES_USER: ${AUTH_DB_USER:-auth_user}
       POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:-auth_password}
       POSTGRES_DB: ${AUTH_DB_NAME:-auth_db}
-    ports:
-      - "5432:5432"
     volumes:
       - auth_db_data:/var/lib/postgresql/data
     restart: unless-stopped
@@ -26,8 +23,6 @@ services:
       POSTGRES_USER: ${EXPENSE_DB_USER:-expense_user}
       POSTGRES_PASSWORD: ${EXPENSE_DB_PASSWORD:-expense_password}
       POSTGRES_DB: ${EXPENSE_DB_NAME:-expense_db}
-    ports:
-      - "5433:5432"
     volumes:
       - expense_db_data:/var/lib/postgresql/data
     restart: unless-stopped
@@ -43,8 +38,6 @@ services:
     command: redis-server --requirepass "${REDIS_PASSWORD:-redis_password}" --save 60 1 --loglevel warning
     environment:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_password}
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
     restart: unless-stopped
@@ -57,12 +50,9 @@ services:
   rabbitmq:
     image: rabbitmq:3-management-alpine
     container_name: rabbitmq-broker
-    ports:
-      - "5672:5672"
-      - "15672:15672"
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest_password}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-RabbitMQPassword@1234}
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     restart: unless-stopped
@@ -71,6 +61,119 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # --- BACKEND MICROSERVICES ---
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: auth-service
+    environment:
+      PORT: 8081
+      DB_HOST: auth-db
+      DB_PORT: 5432
+      DB_USER: ${AUTH_DB_USER:-auth_user}
+      DB_PASSWORD: ${AUTH_DB_PASSWORD:-auth_password}
+      DB_NAME: ${AUTH_DB_NAME:-auth_db}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_password}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-RabbitMQPassword@1234}
+      RABBITMQ_QUEUE: auth_notifications
+    restart: unless-stopped
+    depends_on:
+      auth-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  expense-service:
+    build:
+      context: ./expense-service
+      dockerfile: Dockerfile
+    container_name: expense-service
+    environment:
+      PORT: 8082
+      DB_HOST: expense-db
+      DB_PORT: 5432
+      DB_USER: ${EXPENSE_DB_USER:-expense_user}
+      DB_PASSWORD: ${EXPENSE_DB_PASSWORD:-ExpensePassword@1234}
+      DB_NAME: ${EXPENSE_DB_NAME:-expense_db}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-RabbitMQPassword@1234}
+      RABBITMQ_QUEUE: auth_notifications
+    restart: unless-stopped
+    depends_on:
+      expense-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    environment:
+      PORT: 8080
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_password}
+      AUTH_SERVICE_URL: http://auth-service:8081
+      EXPENSE_SERVICE_URL: http://expense-service:8082
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
+      expense-service:
+        condition: service_started
+
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    container_name: notification-service
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-RabbitMQPassword@1234}
+      EXPENSE_SERVICE_URL: http://expense-service:8082
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM}
+    restart: unless-stopped
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      expense-service:
+        condition: service_started
+
+  # --- WEB FRONTEND ---
+  expense-mate-web:
+    build:
+      context: ./expense-mate-web
+      dockerfile: Dockerfile
+    container_name: expense-mate-web
+    ports:
+      - "3000:3000"
+    environment:
+      GATEWAY_URL: http://api-gateway:8080
+      PORT: 3000
+    restart: unless-stopped
+    depends_on:
+      - api-gateway
 
 volumes:
   auth_db_data:
