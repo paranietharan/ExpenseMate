@@ -8,19 +8,6 @@ export interface User {
   avatarUrl?: string;
 }
 
-export interface GroupMember {
-  user_id: string;
-  user_email: string;
-  joined_at: string;
-}
-
-export interface Group {
-  id: string;
-  name: string;
-  created_at: string;
-  members: GroupMember[];
-}
-
 export interface ExpenseSplit {
   user_id: string;
   user_email: string;
@@ -29,18 +16,18 @@ export interface ExpenseSplit {
 
 export interface Expense {
   id: string;
-  group_id?: string;
   description: string;
   amount: number;
   payer_id: string;
   payer_email: string;
+  creator_id: string;
+  creator_email: string;
   created_at: string;
   splits: ExpenseSplit[];
 }
 
 export interface Settlement {
   id: string;
-  group_id?: string;
   payer_id: string;
   payer_email: string;
   payee_id: string;

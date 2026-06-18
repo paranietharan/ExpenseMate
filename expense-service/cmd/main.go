@@ -43,21 +43,6 @@ func main() {
 	expenseHandler := expense.NewExpenseHandler(dbConn, pub)
 	mux := http.NewServeMux()
 
-	// Groups
-	mux.HandleFunc("/groups", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/groups" {
-			if r.Method == http.MethodPost {
-				expenseHandler.CreateGroup(w, r)
-			} else if r.Method == http.MethodGet {
-				expenseHandler.ListGroups(w, r)
-			} else {
-				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			}
-		} else {
-			expenseHandler.GetGroupDetails(w, r)
-		}
-	})
-
 	// Expenses
 	mux.HandleFunc("/expenses", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/expenses" {

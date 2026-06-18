@@ -55,210 +55,6 @@ func (h *ExpenseHandler) getOrCreateUserIDByEmail(email string) (string, error) 
 	return id, nil
 }
 
-func (h *ExpenseHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	userID, userEmail, err := h.getUserInfo(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
-		return
-	}
-
-	var req dto.CreateGroupRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	req.Name = strings.TrimSpace(req.Name)
-	if req.Name == "" {
-		http.Error(w, "Group name is required", http.StatusBadRequest)
-		return
-	}
-
-	tx, err := h.DB.Begin()
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	defer tx.Rollback()
-
-	var groupID string
-	err = tx.QueryRow("INSERT INTO groups (name) VALUES ($1) RETURNING id", req.Name).Scan(&groupID)
-	if err != nil {
-		log.Printf("Failed to create group: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	// Add creator as member
-	_, err = tx.Exec("INSERT INTO group_members (group_id, user_id, user_email) VALUES ($1, $2, $3)", groupID, userID, userEmail)
-	if err != nil {
-		log.Printf("Failed to add creator as group member: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	// Add other members
-	addedEmails := make(map[string]bool)
-	addedEmails[userEmail] = true
-
-	for _, email := range req.Members {
-		email = strings.TrimSpace(strings.ToLower(email))
-		if email == "" || addedEmails[email] {
-			continue
-		}
-		addedEmails[email] = true
-
-		memberID, err := h.getOrCreateUserIDByEmail(email)
-		if err != nil {
-			log.Printf("Failed to get or create user for email %s: %v", email, err)
-			continue
-		}
-
-		_, err = tx.Exec("INSERT INTO group_members (group_id, user_id, user_email) VALUES ($1, $2, $3)", groupID, memberID, email)
-		if err != nil {
-			log.Printf("Failed to add group member: %v", err)
-			continue
-		}
-	}
-
-	if err = tx.Commit(); err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	// Fetch members list to return response
-	rows, err := h.DB.Query("SELECT user_id, user_email, joined_at FROM group_members WHERE group_id = $1", groupID)
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	defer rows.Close()
-
-	members := []dto.GroupMemberResponse{}
-	for rows.Next() {
-		var m dto.GroupMemberResponse
-		if err := rows.Scan(&m.UserID, &m.UserEmail, &m.JoinedAt); err == nil {
-			members = append(members, m)
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(dto.GroupResponse{
-		ID:        groupID,
-		Name:      req.Name,
-		CreatedAt: time.Now(),
-		Members:   members,
-	})
-}
-
-func (h *ExpenseHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	userID, _, err := h.getUserInfo(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
-		return
-	}
-
-	rows, err := h.DB.Query(`
-		SELECT g.id, g.name, g.created_at 
-		FROM groups g 
-		JOIN group_members gm ON gm.group_id = g.id 
-		WHERE gm.user_id = $1 
-		ORDER BY g.created_at DESC
-	`, userID)
-	if err != nil {
-		log.Printf("Failed to query user groups: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	defer rows.Close()
-
-	groups := []dto.GroupResponse{}
-	for rows.Next() {
-		var g dto.GroupResponse
-		if err := rows.Scan(&g.ID, &g.Name, &g.CreatedAt); err != nil {
-			continue
-		}
-
-		// Fetch members for this group
-		memberRows, err := h.DB.Query("SELECT user_id, user_email, joined_at FROM group_members WHERE group_id = $1", g.ID)
-		if err != nil {
-			continue
-		}
-		g.Members = []dto.GroupMemberResponse{}
-		for memberRows.Next() {
-			var m dto.GroupMemberResponse
-			if err := memberRows.Scan(&m.UserID, &m.UserEmail, &m.JoinedAt); err == nil {
-				g.Members = append(g.Members, m)
-			}
-		}
-		memberRows.Close()
-
-		groups = append(groups, g)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(groups)
-}
-
-func (h *ExpenseHandler) GetGroupDetails(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	userID, _, err := h.getUserInfo(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
-		return
-	}
-
-	groupID := strings.TrimPrefix(r.URL.Path, "/groups/")
-
-	// Verify membership
-	var isMember bool
-	err = h.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2)", groupID, userID).Scan(&isMember)
-	if err != nil || !isMember {
-		http.Error(w, "Group not found or access denied", http.StatusForbidden)
-		return
-	}
-
-	var g dto.GroupResponse
-	err = h.DB.QueryRow("SELECT id, name, created_at FROM groups WHERE id = $1", groupID).Scan(&g.ID, &g.Name, &g.CreatedAt)
-	if err != nil {
-		http.Error(w, "Group not found", http.StatusNotFound)
-		return
-	}
-
-	rows, err := h.DB.Query("SELECT user_id, user_email, joined_at FROM group_members WHERE group_id = $1", groupID)
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	defer rows.Close()
-
-	g.Members = []dto.GroupMemberResponse{}
-	for rows.Next() {
-		var m dto.GroupMemberResponse
-		if err := rows.Scan(&m.UserID, &m.UserEmail, &m.JoinedAt); err == nil {
-			g.Members = append(g.Members, m)
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(g)
-}
-
 func (h *ExpenseHandler) CreateExpense(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -282,6 +78,12 @@ func (h *ExpenseHandler) CreateExpense(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enforce 2-10 people split check
+	if len(req.Splits) < 2 || len(req.Splits) > 10 {
+		http.Error(w, "An expense must be shared between 2 to 10 people", http.StatusBadRequest)
+		return
+	}
+
 	tx, err := h.DB.Begin()
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -289,95 +91,53 @@ func (h *ExpenseHandler) CreateExpense(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	// 1. If group_id is supplied, verify membership
-	if req.GroupID != nil && *req.GroupID != "" {
-		var isMember bool
-		err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2)", *req.GroupID, userID).Scan(&isMember)
-		if err != nil || !isMember {
-			http.Error(w, "Access denied to group", http.StatusForbidden)
+	// Payer resolution
+	payerID := userID
+	payerEmail := userEmail
+	if req.PayerEmail != nil && *req.PayerEmail != "" {
+		payerEmail = strings.TrimSpace(strings.ToLower(*req.PayerEmail))
+		payerID, err = h.getOrCreateUserIDByEmail(payerEmail)
+		if err != nil {
+			log.Printf("Failed to resolve payer ID: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 	}
 
-	// 2. Insert expense
+	// Insert expense (saving payer and creator)
 	var expenseID string
-	var groupIDVal sql.NullString
-	if req.GroupID != nil && *req.GroupID != "" {
-		groupIDVal = sql.NullString{String: *req.GroupID, Valid: true}
-	}
 	err = tx.QueryRow(`
-		INSERT INTO expenses (group_id, description, amount, payer_id, payer_email) 
-		VALUES ($1, $2, $3, $4, $5) RETURNING id
-	`, groupIDVal, req.Description, req.Amount, userID, userEmail).Scan(&expenseID)
+		INSERT INTO expenses (description, amount, payer_id, payer_email, creator_id, creator_email) 
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+	`, req.Description, req.Amount, payerID, payerEmail, userID, userEmail).Scan(&expenseID)
 	if err != nil {
 		log.Printf("Failed to insert expense: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// 3. Compute splits
-	splits := req.Splits
-	if len(splits) == 0 {
-		// If group expense and no splits given, split equally among all group members
-		if req.GroupID != nil && *req.GroupID != "" {
-			rows, err := h.DB.Query("SELECT user_id, user_email FROM group_members WHERE group_id = $1", *req.GroupID)
-			if err != nil {
-				http.Error(w, "Internal server error", http.StatusInternalServerError)
-				return
-			}
-			defer rows.Close()
-
-			var membersList []struct {
-				id    string
-				email string
-			}
-			for rows.Next() {
-				var m struct {
-					id    string
-					email string
-				}
-				if err := rows.Scan(&m.id, &m.email); err == nil {
-					membersList = append(membersList, m)
-				}
-			}
-
-			if len(membersList) > 0 {
-				splitAmount := req.Amount / float64(len(membersList))
-				for _, m := range membersList {
-					splits = append(splits, dto.ExpenseSplit{
-						UserID:    m.id,
-						UserEmail: m.email,
-						Amount:    splitAmount,
-					})
-				}
-			}
-		} else {
-			// Peer-to-peer expense split equally with self
-			splits = append(splits, dto.ExpenseSplit{
-				UserID:    userID,
-				UserEmail: userEmail,
-				Amount:    req.Amount,
-			})
-		}
-	}
-
-	// 4. Insert splits
-	for _, split := range splits {
+	// Insert splits
+	var resolvedSplits []dto.ExpenseSplit
+	for _, split := range req.Splits {
 		split.UserEmail = strings.TrimSpace(strings.ToLower(split.UserEmail))
 		if split.UserID == "" {
 			split.UserID, err = h.getOrCreateUserIDByEmail(split.UserEmail)
 			if err != nil {
-				log.Printf("Failed to resolve user ID for split email: %v", err)
+				log.Printf("Failed to resolve user ID for split email %s: %v", split.UserEmail, err)
 				continue
 			}
 		}
 
-		_, err = tx.Exec("INSERT INTO expense_splits (expense_id, user_id, user_email, amount) VALUES ($1, $2, $3, $4)", expenseID, split.UserID, split.UserEmail, split.Amount)
+		_, err = tx.Exec(`
+			INSERT INTO expense_splits (expense_id, user_id, user_email, amount) 
+			VALUES ($1, $2, $3, $4)
+		`, expenseID, split.UserID, split.UserEmail, split.Amount)
 		if err != nil {
 			log.Printf("Failed to insert split: %v", err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
+		resolvedSplits = append(resolvedSplits, split)
 	}
 
 	if err = tx.Commit(); err != nil {
@@ -385,8 +145,9 @@ func (h *ExpenseHandler) CreateExpense(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Publish notifications
 	if h.Publisher != nil {
-		for _, split := range splits {
+		for _, split := range resolvedSplits {
 			if split.UserEmail == userEmail {
 				continue
 			}
@@ -402,22 +163,18 @@ func (h *ExpenseHandler) CreateExpense(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var retGroupID *string
-	if req.GroupID != nil && *req.GroupID != "" {
-		retGroupID = req.GroupID
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(dto.ExpenseResponse{
-		ID:          expenseID,
-		GroupID:     retGroupID,
-		Description: req.Description,
-		Amount:      req.Amount,
-		PayerID:     userID,
-		PayerEmail:  userEmail,
-		CreatedAt:   time.Now(),
-		Splits:      splits,
+		ID:           expenseID,
+		Description:  req.Description,
+		Amount:       req.Amount,
+		PayerID:      payerID,
+		PayerEmail:   payerEmail,
+		CreatorID:    userID,
+		CreatorEmail: userEmail,
+		CreatedAt:    time.Now(),
+		Splits:       resolvedSplits,
 	})
 }
 
@@ -433,25 +190,13 @@ func (h *ExpenseHandler) ListExpenses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	groupID := r.URL.Query().Get("group_id")
-
-	var rows *sql.Rows
-	if groupID != "" {
-		rows, err = h.DB.Query(`
-			SELECT id, group_id, description, amount, payer_id, payer_email, created_at 
-			FROM expenses 
-			WHERE group_id = $1 
-			ORDER BY created_at DESC
-		`, groupID)
-	} else {
-		rows, err = h.DB.Query(`
-			SELECT DISTINCT e.id, e.group_id, e.description, e.amount, e.payer_id, e.payer_email, e.created_at 
-			FROM expenses e 
-			LEFT JOIN expense_splits s ON s.expense_id = e.id 
-			WHERE e.payer_id = $1 OR s.user_id = $1 
-			ORDER BY e.created_at DESC
-		`, userID)
-	}
+	rows, err := h.DB.Query(`
+		SELECT DISTINCT e.id, e.description, e.amount, e.payer_id, e.payer_email, e.creator_id, e.creator_email, e.created_at 
+		FROM expenses e 
+		LEFT JOIN expense_splits s ON s.expense_id = e.id 
+		WHERE e.payer_id = $1 OR s.user_id = $1 OR e.creator_id = $1
+		ORDER BY e.created_at DESC
+	`, userID)
 
 	if err != nil {
 		log.Printf("Failed to query expenses: %v", err)
@@ -463,16 +208,11 @@ func (h *ExpenseHandler) ListExpenses(w http.ResponseWriter, r *http.Request) {
 	expenses := []dto.ExpenseResponse{}
 	for rows.Next() {
 		var e dto.ExpenseResponse
-		var gID sql.NullString
 		var createdAt time.Time
-		if err := rows.Scan(&e.ID, &gID, &e.Description, &e.Amount, &e.PayerID, &e.PayerEmail, &createdAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.Description, &e.Amount, &e.PayerID, &e.PayerEmail, &e.CreatorID, &e.CreatorEmail, &createdAt); err != nil {
 			continue
 		}
 		e.CreatedAt = createdAt
-
-		if gID.Valid {
-			e.GroupID = &gID.String
-		}
 
 		// Fetch splits
 		splitRows, err := h.DB.Query("SELECT user_id, user_email, amount FROM expense_splits WHERE expense_id = $1", e.ID)
@@ -509,21 +249,32 @@ func (h *ExpenseHandler) UpdateExpense(w http.ResponseWriter, r *http.Request) {
 
 	expenseID := strings.TrimPrefix(r.URL.Path, "/expenses/")
 
-	var payerID string
-	err = h.DB.QueryRow("SELECT payer_id FROM expenses WHERE id = $1", expenseID).Scan(&payerID)
+	var payerID, creatorID string
+	err = h.DB.QueryRow("SELECT payer_id, creator_id FROM expenses WHERE id = $1", expenseID).Scan(&payerID, &creatorID)
 	if err != nil {
 		http.Error(w, "Expense not found", http.StatusNotFound)
 		return
 	}
 
-	if payerID != userID {
-		http.Error(w, "Only the payer can update this expense", http.StatusForbidden)
+	// Authorize either payer OR creator to edit
+	if payerID != userID && creatorID != userID {
+		http.Error(w, "Only the payer or creator can update this expense", http.StatusForbidden)
 		return
 	}
 
 	var req dto.CreateExpenseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Description == "" || req.Amount <= 0 {
+		http.Error(w, "Description and positive amount are required", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Splits) < 2 || len(req.Splits) > 10 {
+		http.Error(w, "An expense must be shared between 2 to 10 people", http.StatusBadRequest)
 		return
 	}
 
@@ -534,7 +285,29 @@ func (h *ExpenseHandler) UpdateExpense(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	_, err = tx.Exec("UPDATE expenses SET description = $1, amount = $2 WHERE id = $3", req.Description, req.Amount, expenseID)
+	// Update payer details if supplied
+	newPayerID := payerID
+	newPayerEmail := ""
+	err = h.DB.QueryRow("SELECT payer_email FROM expenses WHERE id = $1", expenseID).Scan(&newPayerEmail)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if req.PayerEmail != nil && *req.PayerEmail != "" {
+		newPayerEmail = strings.TrimSpace(strings.ToLower(*req.PayerEmail))
+		newPayerID, err = h.getOrCreateUserIDByEmail(newPayerEmail)
+		if err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	_, err = tx.Exec(`
+		UPDATE expenses 
+		SET description = $1, amount = $2, payer_id = $3, payer_email = $4 
+		WHERE id = $5
+	`, req.Description, req.Amount, newPayerID, newPayerEmail, expenseID)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
@@ -553,7 +326,10 @@ func (h *ExpenseHandler) UpdateExpense(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 		}
-		_, err = tx.Exec("INSERT INTO expense_splits (expense_id, user_id, user_email, amount) VALUES ($1, $2, $3, $4)", expenseID, split.UserID, split.UserEmail, split.Amount)
+		_, err = tx.Exec(`
+			INSERT INTO expense_splits (expense_id, user_id, user_email, amount) 
+			VALUES ($1, $2, $3, $4)
+		`, expenseID, split.UserID, split.UserEmail, split.Amount)
 		if err != nil {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
@@ -583,15 +359,16 @@ func (h *ExpenseHandler) DeleteExpense(w http.ResponseWriter, r *http.Request) {
 
 	expenseID := strings.TrimPrefix(r.URL.Path, "/expenses/")
 
-	var payerID string
-	err = h.DB.QueryRow("SELECT payer_id FROM expenses WHERE id = $1", expenseID).Scan(&payerID)
+	var payerID, creatorID string
+	err = h.DB.QueryRow("SELECT payer_id, creator_id FROM expenses WHERE id = $1", expenseID).Scan(&payerID, &creatorID)
 	if err != nil {
 		http.Error(w, "Expense not found", http.StatusNotFound)
 		return
 	}
 
-	if payerID != userID {
-		http.Error(w, "Only the payer can delete this expense", http.StatusForbidden)
+	// Authorize either payer OR creator to delete
+	if payerID != userID && creatorID != userID {
+		http.Error(w, "Only the payer or creator can delete this expense", http.StatusForbidden)
 		return
 	}
 
@@ -617,20 +394,13 @@ func (h *ExpenseHandler) GetBalances(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	groupID := r.URL.Query().Get("group_id")
-
-	// 1. Fetch expenses
-	var expRows *sql.Rows
-	if groupID != "" {
-		expRows, err = h.DB.Query("SELECT id, payer_id, payer_email, amount FROM expenses WHERE group_id = $1", groupID)
-	} else {
-		expRows, err = h.DB.Query(`
-			SELECT DISTINCT e.id, e.payer_id, e.payer_email, e.amount 
-			FROM expenses e 
-			LEFT JOIN expense_splits s ON s.expense_id = e.id 
-			WHERE e.payer_id = $1 OR s.user_id = $1
-		`, userID)
-	}
+	// 1. Fetch P2P expenses (no group logic remains)
+	expRows, err := h.DB.Query(`
+		SELECT DISTINCT e.id, e.payer_id, e.payer_email, e.amount 
+		FROM expenses e 
+		LEFT JOIN expense_splits s ON s.expense_id = e.id 
+		WHERE e.payer_id = $1 OR s.user_id = $1
+	`, userID)
 
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -638,7 +408,6 @@ func (h *ExpenseHandler) GetBalances(w http.ResponseWriter, r *http.Request) {
 	}
 	defer expRows.Close()
 
-	// Map of friend_email -> balance (positive means they owe you, negative means you owe them)
 	balancesMap := make(map[string]*dto.DebtBalance)
 
 	for expRows.Next() {
@@ -648,7 +417,6 @@ func (h *ExpenseHandler) GetBalances(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// Fetch splits for this expense
 		splitsRows, err := h.DB.Query("SELECT user_id, user_email, amount FROM expense_splits WHERE expense_id = $1", expID)
 		if err != nil {
 			continue
@@ -661,7 +429,6 @@ func (h *ExpenseHandler) GetBalances(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			// If I am the payer
 			if payerID == userID {
 				if splitUserID != userID {
 					if _, ok := balancesMap[splitUserEmail]; !ok {
@@ -670,7 +437,6 @@ func (h *ExpenseHandler) GetBalances(w http.ResponseWriter, r *http.Request) {
 					balancesMap[splitUserEmail].Balance += splitAmount
 				}
 			} else {
-				// If I am in the splits, and someone else paid
 				if splitUserID == userID {
 					if _, ok := balancesMap[payerEmail]; !ok {
 						balancesMap[payerEmail] = &dto.DebtBalance{UserID: payerID, UserEmail: payerEmail, Balance: 0}
@@ -683,12 +449,11 @@ func (h *ExpenseHandler) GetBalances(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Fetch settlements to offset balances
-	var setRows *sql.Rows
-	if groupID != "" {
-		setRows, err = h.DB.Query("SELECT payer_id, payer_email, payee_id, payee_email, amount FROM settlements WHERE group_id = $1", groupID)
-	} else {
-		setRows, err = h.DB.Query("SELECT payer_id, payer_email, payee_id, payee_email, amount FROM settlements WHERE payer_id = $1 OR payee_id = $1", userID)
-	}
+	setRows, err := h.DB.Query(`
+		SELECT payer_id, payer_email, payee_id, payee_email, amount 
+		FROM settlements 
+		WHERE payer_id = $1 OR payee_id = $1
+	`, userID)
 
 	if err == nil {
 		for setRows.Next() {
@@ -696,13 +461,11 @@ func (h *ExpenseHandler) GetBalances(w http.ResponseWriter, r *http.Request) {
 			var amount float64
 			if err := setRows.Scan(&pID, &pEmail, &payeeID, &payeeEmail, &amount); err == nil {
 				if pID == userID {
-					// I paid payee, so they owe me less / I owe them less (increases my balance)
 					if _, ok := balancesMap[payeeEmail]; !ok {
 						balancesMap[payeeEmail] = &dto.DebtBalance{UserID: payeeID, UserEmail: payeeEmail, Balance: 0}
 					}
 					balancesMap[payeeEmail].Balance += amount
 				} else if payeeID == userID {
-					// Payer paid me, so I owe them less / they owe me less (decreases my balance)
 					if _, ok := balancesMap[pEmail]; !ok {
 						balancesMap[pEmail] = &dto.DebtBalance{UserID: pID, UserEmail: pEmail, Balance: 0}
 					}
@@ -715,7 +478,6 @@ func (h *ExpenseHandler) GetBalances(w http.ResponseWriter, r *http.Request) {
 
 	balances := []dto.DebtBalance{}
 	for _, b := range balancesMap {
-		// round to 2 decimals
 		b.Balance = float64(int(b.Balance*100)) / 100.0
 		if b.Balance != 0.0 {
 			balances = append(balances, *b)
@@ -749,16 +511,11 @@ func (h *ExpenseHandler) SettleDebt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var groupIDVal sql.NullString
-	if req.GroupID != nil && *req.GroupID != "" {
-		groupIDVal = sql.NullString{String: *req.GroupID, Valid: true}
-	}
-
 	var settlementID string
 	err = h.DB.QueryRow(`
-		INSERT INTO settlements (group_id, payer_id, payer_email, payee_id, payee_email, amount) 
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
-	`, groupIDVal, userID, userEmail, req.PayeeID, req.PayeeEmail, req.Amount).Scan(&settlementID)
+		INSERT INTO settlements (payer_id, payer_email, payee_id, payee_email, amount) 
+		VALUES ($1, $2, $3, $4, $5) RETURNING id
+	`, userID, userEmail, req.PayeeID, req.PayeeEmail, req.Amount).Scan(&settlementID)
 
 	if err != nil {
 		log.Printf("Failed to settle debt: %v", err)
@@ -782,7 +539,6 @@ func (h *ExpenseHandler) SettleDebt(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(dto.SettlementResponse{
 		ID:         settlementID,
-		GroupID:    req.GroupID,
 		PayerID:    userID,
 		PayerEmail: userEmail,
 		PayeeID:    req.PayeeID,
@@ -804,24 +560,12 @@ func (h *ExpenseHandler) ListSettlements(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	groupID := r.URL.Query().Get("group_id")
-
-	var rows *sql.Rows
-	if groupID != "" {
-		rows, err = h.DB.Query(`
-			SELECT id, group_id, payer_id, payer_email, payee_id, payee_email, amount, created_at 
-			FROM settlements 
-			WHERE group_id = $1 
-			ORDER BY created_at DESC
-		`, groupID)
-	} else {
-		rows, err = h.DB.Query(`
-			SELECT id, group_id, payer_id, payer_email, payee_id, payee_email, amount, created_at 
-			FROM settlements 
-			WHERE payer_id = $1 OR payee_id = $1 
-			ORDER BY created_at DESC
-		`, userID)
-	}
+	rows, err := h.DB.Query(`
+		SELECT id, payer_id, payer_email, payee_id, payee_email, amount, created_at 
+		FROM settlements 
+		WHERE payer_id = $1 OR payee_id = $1 
+		ORDER BY created_at DESC
+	`, userID)
 
 	if err != nil {
 		log.Printf("Failed to query settlements: %v", err)
@@ -833,13 +577,9 @@ func (h *ExpenseHandler) ListSettlements(w http.ResponseWriter, r *http.Request)
 	settlements := []dto.SettlementResponse{}
 	for rows.Next() {
 		var s dto.SettlementResponse
-		var gID sql.NullString
 		var createdAt time.Time
-		if err := rows.Scan(&s.ID, &gID, &s.PayerID, &s.PayerEmail, &s.PayeeID, &s.PayeeEmail, &s.Amount, &createdAt); err == nil {
+		if err := rows.Scan(&s.ID, &s.PayerID, &s.PayerEmail, &s.PayeeID, &s.PayeeEmail, &s.Amount, &createdAt); err == nil {
 			s.CreatedAt = createdAt
-			if gID.Valid {
-				s.GroupID = &gID.String
-			}
 			settlements = append(settlements, s)
 		}
 	}
