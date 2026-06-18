@@ -10,6 +10,7 @@ import (
 	"auth-service/internal/auth"
 	"auth-service/internal/config"
 	"auth-service/internal/database"
+	"auth-service/internal/rabbitmq"
 	"auth-service/internal/redis"
 )
 
@@ -37,7 +38,21 @@ func main() {
 	}
 	defer rClient.Close()
 
-	authHandler := auth.NewAuthHandler(dbConn, rClient, cfg.PrintMFACodes)
+	pub, err := rabbitmq.NewRabbitMQPublisher(
+		cfg.RabbitMQUser,
+		cfg.RabbitMQPassword,
+		cfg.RabbitMQHost,
+		cfg.RabbitMQPort,
+		"auth_notifications",
+	)
+	if err != nil {
+		log.Printf("Warning: Failed to connect to RabbitMQ: %v. Running without publisher.", err)
+	} else {
+		defer pub.Close()
+		log.Println("RabbitMQ publisher connection established successfully")
+	}
+
+	authHandler := auth.NewAuthHandler(dbConn, rClient, cfg.PrintMFACodes, pub)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/register", authHandler.Register)
 	mux.HandleFunc("/register/verify", authHandler.VerifyRegister)

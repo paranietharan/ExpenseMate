@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/binary"
@@ -14,6 +15,7 @@ import (
 
 	"auth-service/internal/database"
 	"auth-service/internal/dto"
+	"auth-service/internal/rabbitmq"
 	internal_redis "auth-service/internal/redis"
 
 	"github.com/redis/go-redis/v9"
@@ -25,13 +27,15 @@ type AuthHandler struct {
 	DB            *sql.DB
 	RedisClient   *redis.Client
 	PrintMFACodes bool
+	Publisher     *rabbitmq.RabbitMQPublisher
 }
 
-func NewAuthHandler(database *sql.DB, rdb *redis.Client, printMFACodes bool) *AuthHandler {
+func NewAuthHandler(database *sql.DB, rdb *redis.Client, printMFACodes bool, pub *rabbitmq.RabbitMQPublisher) *AuthHandler {
 	return &AuthHandler{
 		DB:            database,
 		RedisClient:   rdb,
 		PrintMFACodes: printMFACodes,
+		Publisher:     pub,
 	}
 }
 
@@ -123,6 +127,14 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("\n--- [EMAIL OUTBOX SIMULATOR - REGISTRATION] ---\nTo: %s\nSubject: ExpenseMate Email Verification\nCode: %s\n-----------------------------------------------\n\n", req.Email, code)
 	}
 
+	if h.Publisher != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			h.Publisher.PublishNotification(ctx, req.Email, "register", map[string]string{"code": code})
+		}()
+	}
+
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Registration successful. Please verify your email."})
 }
@@ -172,6 +184,14 @@ func (h *AuthHandler) VerifyRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = h.RedisClient.Del(r.Context(), pendingKey).Err()
+
+	if h.Publisher != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			h.Publisher.PublishNotification(ctx, req.Email, "welcome", nil)
+		}()
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Email verified successfully. You can now login."})
@@ -290,6 +310,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Secure:   false,
 		SameSite: http.SameSiteLaxMode,
 	})
+
+	if h.Publisher != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			h.Publisher.PublishNotification(ctx, user.Email, "login", nil)
+		}()
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
@@ -475,6 +503,14 @@ func (h *AuthHandler) VerifyLogin(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
+	if h.Publisher != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			h.Publisher.PublishNotification(ctx, user.Email, "login", nil)
+		}()
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "Login successful",
@@ -569,6 +605,16 @@ func (h *AuthHandler) EnableTOTP(w http.ResponseWriter, r *http.Request) {
 
 	_ = h.RedisClient.Del(r.Context(), pendingKey).Err()
 
+	if h.Publisher != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			var email string
+			h.DB.QueryRow("SELECT email FROM users WHERE id = $1", userID).Scan(&email)
+			h.Publisher.PublishNotification(ctx, email, "enable_totp", nil)
+		}()
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "TOTP Multi-factor authentication enabled successfully"})
 }
@@ -590,6 +636,16 @@ func (h *AuthHandler) DisableTOTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
+	}
+
+	if h.Publisher != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			var email string
+			h.DB.QueryRow("SELECT email FROM users WHERE id = $1", userID).Scan(&email)
+			h.Publisher.PublishNotification(ctx, email, "disable_totp", nil)
+		}()
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -675,6 +731,16 @@ func (h *AuthHandler) EnableEmailMFA(w http.ResponseWriter, r *http.Request) {
 
 	_ = h.RedisClient.Del(r.Context(), pendingKey).Err()
 
+	if h.Publisher != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			var email string
+			h.DB.QueryRow("SELECT email FROM users WHERE id = $1", userID).Scan(&email)
+			h.Publisher.PublishNotification(ctx, email, "enable_email_2fa", nil)
+		}()
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Email Multi-factor authentication enabled successfully"})
 }
@@ -696,6 +762,16 @@ func (h *AuthHandler) DisableEmailMFA(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
+	}
+
+	if h.Publisher != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			var email string
+			h.DB.QueryRow("SELECT email FROM users WHERE id = $1", userID).Scan(&email)
+			h.Publisher.PublishNotification(ctx, email, "disable_email_2fa", nil)
+		}()
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -807,6 +883,14 @@ func (h *AuthHandler) RequestPasswordReset(w http.ResponseWriter, r *http.Reques
 		fmt.Printf("\n--- [EMAIL OUTBOX SIMULATOR - PASSWORD RESET] ---\nTo: %s\nSubject: ExpenseMate Password Reset Code\nCode: %s\n-------------------------------------------------\n\n", req.Email, code)
 	}
 
+	if h.Publisher != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			h.Publisher.PublishNotification(ctx, req.Email, "forgot_password", map[string]string{"code": code})
+		}()
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "If the email is registered, a password reset code has been sent."})
 }
@@ -858,6 +942,14 @@ func (h *AuthHandler) VerifyPasswordReset(w http.ResponseWriter, r *http.Request
 
 	_ = h.RedisClient.Del(r.Context(), pendingKey).Err()
 
+	if h.Publisher != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			h.Publisher.PublishNotification(ctx, req.Email, "change_password", nil)
+		}()
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Password has been reset successfully. You can now login."})
 }
@@ -908,6 +1000,16 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Failed to change password: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
+	}
+
+	if h.Publisher != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			var email string
+			h.DB.QueryRow("SELECT email FROM users WHERE id = $1", userID).Scan(&email)
+			h.Publisher.PublishNotification(ctx, email, "change_password", nil)
+		}()
 	}
 
 	w.Header().Set("Content-Type", "application/json")

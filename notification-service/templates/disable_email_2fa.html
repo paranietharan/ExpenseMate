@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SECURITY WARNING: Email MFA Disabled</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f8fafc;
+            margin: 0;
+            padding: 0;
+            -webkit-font-smoothing: antialiased;
+        }
+        .wrapper {
+            width: 100%;
+            table-layout: fixed;
+            background-color: #f8fafc;
+            padding: 40px 0;
+        }
+        .container {
+            max-width: 580px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 16px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.025);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+            padding: 32px;
+            text-align: center;
+        }
+        .header h1 {
+            color: #ffffff;
+            font-size: 26px;
+            font-weight: 700;
+            margin: 0;
+            letter-spacing: -0.5px;
+        }
+        .content {
+            padding: 40px 32px;
+        }
+        .content p {
+            color: #334155;
+            font-size: 16px;
+            line-height: 1.6;
+            margin: 0 0 24px 0;
+        }
+        .status-box {
+            background-color: #fef2f2;
+            border-radius: 12px;
+            padding: 24px;
+            margin: 28px 0;
+            border: 1px solid #fecaca;
+            text-align: center;
+        }
+        .status-icon {
+            font-size: 40px;
+            margin-bottom: 12px;
+        }
+        .status-title {
+            font-weight: 700;
+            font-size: 18px;
+            color: #991b1b;
+            margin-bottom: 4px;
+        }
+        .status-desc {
+            color: #b91c1c;
+            font-size: 14px;
+            margin: 0;
+        }
+        .warning-box {
+            background-color: #fffbeb;
+            border-left: 4px solid #d97706;
+            border-radius: 6px;
+            padding: 16px;
+            margin-top: 24px;
+        }
+        .warning-box p {
+            font-size: 14px;
+            color: #b45309;
+            margin: 0;
+            line-height: 1.5;
+        }
+        .footer {
+            background-color: #f8fafc;
+            padding: 24px 32px;
+            border-top: 1px solid #e2e8f0;
+            text-align: center;
+        }
+        .footer p {
+            font-size: 13px;
+            color: #64748b;
+            line-height: 1.5;
+            margin: 0 0 8px 0;
+        }
+        .footer a {
+            color: #6366f1;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 9999px;
+            background-color: rgba(239, 68, 68, 0.15);
+            color: #dc2626;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="container">
+            <div class="header">
+                <h1>ExpenseMate Security</h1>
+            </div>
+            <div class="content">
+                <div class="badge">Email MFA Disabled</div>
+                <p>Hello,</p>
+                <p>This is a security alert to inform you that Multi-Factor Authentication (MFA) via Email challenges has been **disabled** on your ExpenseMate account (<strong>{{.Email}}</strong>).</p>
+                
+                <div class="status-box">
+                    <div class="status-icon">⚠️</div>
+                    <div class="status-title">Email Challenges Disabled</div>
+                    <p class="status-desc">Your profile is now less secure against unauthorized access.</p>
+                </div>
+
+                <div class="warning-box">
+                    <p><strong>Did you not request this change?</strong><br>
+                    If you did not turn off Email MFA, someone may have compromised your account. Please perform a password reset immediately using the "Forgot Password" link on the sign-in page to secure your profile.</p>
+                </div>
+            </div>
+            <div class="footer">
+                <p>Sent to {{.Email}}</p>
+                <p>&copy; 2026 ExpenseMate. All rights reserved.</p>
+                <p><a href="https://expensemate.com">expensemate.com</a></p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
