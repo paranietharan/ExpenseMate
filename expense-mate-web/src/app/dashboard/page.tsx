@@ -78,6 +78,10 @@ const formatDay = (dateStr: string) => {
   const d = new Date(dateStr);
   return `${MONTHS[d.getMonth()]} ${String(d.getDate()).padStart(2, "0")}`;
 };
+const emailsMatch = (a?: string, b?: string) =>
+  (a || "").trim().toLowerCase() === (b || "").trim().toLowerCase();
+const findBalanceForEmail = (balances: DebtBalance[], email: string) =>
+  balances.find(b => emailsMatch(b.user_email, email));
 
 // Combined timeline item type
 interface TimelineItem {
@@ -181,8 +185,8 @@ export default function Dashboard() {
 
   // ---- HELPERS ----
   const getFriendName = (email: string) => {
-    if (email === user?.email) return "You";
-    const f = friends.find(f => f.email === email);
+    if (emailsMatch(email, user?.email)) return "You";
+    const f = friends.find(f => emailsMatch(f.email, email));
     return f?.name || email.split("@")[0];
   };
 
@@ -200,14 +204,14 @@ export default function Dashboard() {
 
     // Expenses involving this friend
     expenses.forEach(ex => {
-      const involvesFriend = ex.splits.some(s => s.user_email === f.email) || ex.payer_email === f.email || ex.creator_email === f.email;
+      const involvesFriend = ex.splits.some(s => emailsMatch(s.user_email, f.email)) || emailsMatch(ex.payer_email, f.email) || emailsMatch(ex.creator_email, f.email);
       if (!involvesFriend) return;
 
-      const myShare = ex.splits.find(s => s.user_email === user?.email);
-      const theirShare = ex.splits.find(s => s.user_email === f.email);
-      const iPaid = ex.payer_email === user?.email;
-      const theyPaid = ex.payer_email === f.email;
-      const canEdit = ex.payer_email === user?.email || ex.creator_email === user?.email;
+      const myShare = ex.splits.find(s => emailsMatch(s.user_email, user?.email));
+      const theirShare = ex.splits.find(s => emailsMatch(s.user_email, f.email));
+      const iPaid = emailsMatch(ex.payer_email, user?.email);
+      const theyPaid = emailsMatch(ex.payer_email, f.email);
+      const canEdit = emailsMatch(ex.payer_email, user?.email) || emailsMatch(ex.creator_email, user?.email);
 
       items.push({
         id: ex.id,
@@ -225,15 +229,14 @@ export default function Dashboard() {
 
     // Settlements involving this friend
     settlements.forEach(s => {
-      const involves = s.payer_email === f.email || s.payee_email === f.email || s.payer_email === user?.email || s.payee_email === user?.email;
-      const directlyBetween = (s.payer_email === user?.email && s.payee_email === f.email) || (s.payer_email === f.email && s.payee_email === user?.email);
+      const directlyBetween = (emailsMatch(s.payer_email, user?.email) && emailsMatch(s.payee_email, f.email)) || (emailsMatch(s.payer_email, f.email) && emailsMatch(s.payee_email, user?.email));
       if (!directlyBetween) return;
 
       items.push({
         id: s.id,
         type: "settlement",
         date: s.created_at,
-        description: s.payer_email === user?.email ? `You paid ${getFriendName(f.email)}` : `${getFriendName(f.email)} paid you`,
+        description: emailsMatch(s.payer_email, user?.email) ? `You paid ${getFriendName(f.email)}` : `${getFriendName(f.email)} paid you`,
         amount: s.amount,
         raw: s,
       });
@@ -259,11 +262,11 @@ export default function Dashboard() {
     const items: { date: string; text: string; subText: string; amount: number; isOwed: boolean; isSettlement?: boolean }[] = [];
 
     expenses.forEach(ex => {
-      const myShare = ex.splits.find(s => s.user_email === user?.email);
-      const iPaid = ex.payer_email === user?.email;
+      const myShare = ex.splits.find(s => emailsMatch(s.user_email, user?.email));
+      const iPaid = emailsMatch(ex.payer_email, user?.email);
       if (!myShare && !iPaid) return;
 
-      const otherMembers = ex.splits.filter(s => s.user_email !== user?.email);
+      const otherMembers = ex.splits.filter(s => !emailsMatch(s.user_email, user?.email));
       const desc = ex.description;
 
       if (iPaid && otherMembers.length > 0) {
@@ -275,8 +278,8 @@ export default function Dashboard() {
     });
 
     settlements.forEach(s => {
-      const iPaid = s.payer_email === user?.email;
-      const iReceived = s.payee_email === user?.email;
+      const iPaid = emailsMatch(s.payer_email, user?.email);
+      const iReceived = emailsMatch(s.payee_email, user?.email);
       if (!iPaid && !iReceived) return;
       if (iPaid) {
         items.push({ date: s.created_at, text: `You recorded a payment to ${getFriendName(s.payee_email)}.`, subText: new Date(s.created_at).toLocaleString(), amount: s.amount, isOwed: false, isSettlement: true });
@@ -292,7 +295,7 @@ export default function Dashboard() {
   const buildMembersList = () => [
     { user_id: user?.userId || "", user_email: user?.email || "" },
     ...expenseSharedEmails.map(email => ({
-      user_id: friends.find(f => f.email === email)?.user_id || "",
+      user_id: friends.find(f => emailsMatch(f.email, email))?.user_id || "",
       user_email: email,
     })),
   ];
@@ -373,7 +376,7 @@ export default function Dashboard() {
     const amountNum = parseFloat(settlementAmount);
     if (!settlementPayeeEmail || isNaN(amountNum) || amountNum <= 0) return;
 
-    let payeeId = friends.find(f => f.email === settlementPayeeEmail)?.user_id || balances.find(b => b.user_email === settlementPayeeEmail)?.user_id || "";
+    let payeeId = friends.find(f => emailsMatch(f.email, settlementPayeeEmail))?.user_id || findBalanceForEmail(balances, settlementPayeeEmail)?.user_id || "";
     if (!payeeId) { setAlertType("warning"); setAlertMessage("Cannot resolve payee."); return; }
 
     setActionLoading(true);
@@ -587,7 +590,7 @@ export default function Dashboard() {
   // ---- FRIEND DETAIL VIEW ----
   const renderFriendDetail = () => {
     if (!selectedFriend) return null;
-    const bal = balances.find(b => b.user_email === selectedFriend.email);
+    const bal = findBalanceForEmail(balances, selectedFriend.email);
     const timeline = buildFriendTimeline(selectedFriend);
     const groups = groupByMonth(timeline);
     const owesMe = bal && bal.balance > 0;
@@ -638,10 +641,10 @@ export default function Dashboard() {
               <div className="space-y-1">
                 {group.items.map(item => {
                   const ex = item.type === "expense" ? (item.raw as Expense) : null;
-                  const iPaid = ex?.payer_email === user?.email;
-                  const theyPaid = ex?.payer_email === selectedFriend.email;
-                  const myShare = ex?.splits.find(s => s.user_email === user?.email);
-                  const theirShare = ex?.splits.find(s => s.user_email === selectedFriend.email);
+                  const iPaid = emailsMatch(ex?.payer_email, user?.email);
+                  const theyPaid = emailsMatch(ex?.payer_email, selectedFriend.email);
+                  const myShare = ex?.splits.find(s => emailsMatch(s.user_email, user?.email));
+                  const theirShare = ex?.splits.find(s => emailsMatch(s.user_email, selectedFriend.email));
 
                   let statusLabel = "";
                   let statusColor = "";
@@ -787,7 +790,7 @@ export default function Dashboard() {
               <p className="text-zinc-600 text-xs">Tap the + button to add friends</p>
             </div>
           ) : friends.map(f => {
-            const bal = balances.find(b => b.user_email === f.email);
+            const bal = findBalanceForEmail(balances, f.email);
             // Find expense breakdowns for this friend
             const friendExpenses = expenses.filter(ex =>
               ex.splits.some(s => s.user_email === f.email) && (ex.payer_email === user?.email || ex.splits.some(s => s.user_email === user?.email))
@@ -1106,7 +1109,7 @@ export default function Dashboard() {
                 <select value={settlementPayeeEmail} onChange={e => setSettlementPayeeEmail(e.target.value)} required className="w-full px-3 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-sm text-white focus:outline-none focus:border-teal-500/50">
                   <option value="">Select friend…</option>
                   {friends.map(f => <option key={f.user_id} value={f.email}>{f.name || f.email}</option>)}
-                  {balances.filter(b => !friends.some(f => f.email === b.user_email)).map((b, i) => <option key={i} value={b.user_email}>{b.user_email}</option>)}
+                  {balances.filter(b => !friends.some(f => emailsMatch(f.email, b.user_email))).map((b, i) => <option key={i} value={b.user_email}>{b.user_email}</option>)}
                 </select>
               </div>
               <div>

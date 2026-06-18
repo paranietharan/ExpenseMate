@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -39,11 +40,15 @@ func (h *ExpenseHandler) getUserInfo(r *http.Request) (string, string, error) {
 	return userID, userEmail, nil
 }
 
+func normalizeEmail(email string) string {
+	return strings.TrimSpace(strings.ToLower(email))
+}
+
 func (h *ExpenseHandler) getOrCreateUserIDByEmail(email string) (string, error) {
+	email = normalizeEmail(email)
 	var id string
 	err := h.DB.QueryRow("SELECT user_id FROM user_settings WHERE email = $1", email).Scan(&id)
 	if err == sql.ErrNoRows {
-		// Create new invitee settings
 		err = h.DB.QueryRow("INSERT INTO user_settings (user_id, email, notifications_enabled) VALUES (gen_random_uuid(), $1, TRUE) RETURNING user_id", email).Scan(&id)
 		if err != nil {
 			return "", err
@@ -53,6 +58,24 @@ func (h *ExpenseHandler) getOrCreateUserIDByEmail(email string) (string, error) 
 		return "", err
 	}
 	return id, nil
+}
+
+// resolvePayerID prefers auth and split-provided IDs over email-only lookups so
+// payer_id stays aligned with auth user IDs used in expense_splits.
+func (h *ExpenseHandler) resolvePayerID(payerEmail, authUserID, authUserEmail string, splits []dto.ExpenseSplit) (string, error) {
+	payerEmail = normalizeEmail(payerEmail)
+	if payerEmail == "" {
+		return authUserID, nil
+	}
+	if payerEmail == normalizeEmail(authUserEmail) {
+		return authUserID, nil
+	}
+	for _, split := range splits {
+		if normalizeEmail(split.UserEmail) == payerEmail && split.UserID != "" {
+			return split.UserID, nil
+		}
+	}
+	return h.getOrCreateUserIDByEmail(payerEmail)
 }
 
 func (h *ExpenseHandler) CreateExpense(w http.ResponseWriter, r *http.Request) {
@@ -91,17 +114,16 @@ func (h *ExpenseHandler) CreateExpense(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	// Payer resolution
-	payerID := userID
+	// Payer resolution — keep payer_id aligned with auth IDs from splits
 	payerEmail := userEmail
 	if req.PayerEmail != nil && *req.PayerEmail != "" {
-		payerEmail = strings.TrimSpace(strings.ToLower(*req.PayerEmail))
-		payerID, err = h.getOrCreateUserIDByEmail(payerEmail)
-		if err != nil {
-			log.Printf("Failed to resolve payer ID: %v", err)
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-			return
-		}
+		payerEmail = normalizeEmail(*req.PayerEmail)
+	}
+	payerID, err := h.resolvePayerID(payerEmail, userID, userEmail, req.Splits)
+	if err != nil {
+		log.Printf("Failed to resolve payer ID: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
 	}
 
 	// Insert expense (saving payer and creator)
@@ -119,12 +141,16 @@ func (h *ExpenseHandler) CreateExpense(w http.ResponseWriter, r *http.Request) {
 	// Insert splits
 	var resolvedSplits []dto.ExpenseSplit
 	for _, split := range req.Splits {
-		split.UserEmail = strings.TrimSpace(strings.ToLower(split.UserEmail))
+		split.UserEmail = normalizeEmail(split.UserEmail)
 		if split.UserID == "" {
-			split.UserID, err = h.getOrCreateUserIDByEmail(split.UserEmail)
-			if err != nil {
-				log.Printf("Failed to resolve user ID for split email %s: %v", split.UserEmail, err)
-				continue
+			if split.UserEmail == normalizeEmail(userEmail) {
+				split.UserID = userID
+			} else {
+				split.UserID, err = h.getOrCreateUserIDByEmail(split.UserEmail)
+				if err != nil {
+					log.Printf("Failed to resolve user ID for split email %s: %v", split.UserEmail, err)
+					continue
+				}
 			}
 		}
 
@@ -241,7 +267,7 @@ func (h *ExpenseHandler) UpdateExpense(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, _, err := h.getUserInfo(r)
+	userID, userEmail, err := h.getUserInfo(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
@@ -295,12 +321,12 @@ func (h *ExpenseHandler) UpdateExpense(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.PayerEmail != nil && *req.PayerEmail != "" {
-		newPayerEmail = strings.TrimSpace(strings.ToLower(*req.PayerEmail))
-		newPayerID, err = h.getOrCreateUserIDByEmail(newPayerEmail)
-		if err != nil {
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-			return
-		}
+		newPayerEmail = normalizeEmail(*req.PayerEmail)
+	}
+	newPayerID, err = h.resolvePayerID(newPayerEmail, userID, userEmail, req.Splits)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
 	}
 
 	_, err = tx.Exec(`
@@ -320,10 +346,15 @@ func (h *ExpenseHandler) UpdateExpense(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, split := range req.Splits {
+		split.UserEmail = normalizeEmail(split.UserEmail)
 		if split.UserID == "" {
-			split.UserID, err = h.getOrCreateUserIDByEmail(split.UserEmail)
-			if err != nil {
-				continue
+			if split.UserEmail == normalizeEmail(userEmail) {
+				split.UserID = userID
+			} else {
+				split.UserID, err = h.getOrCreateUserIDByEmail(split.UserEmail)
+				if err != nil {
+					continue
+				}
 			}
 		}
 		_, err = tx.Exec(`
@@ -388,103 +419,113 @@ func (h *ExpenseHandler) GetBalances(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, _, err := h.getUserInfo(r)
+	userID, userEmail, err := h.getUserInfo(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 
-	// 1. Fetch P2P expenses (no group logic remains)
+	balancesMap := make(map[string]*dto.DebtBalance)
+
+	// ------ Expenses ------
 	expRows, err := h.DB.Query(`
-		SELECT DISTINCT e.id, e.payer_id, e.payer_email, e.amount 
-		FROM expenses e 
-		LEFT JOIN expense_splits s ON s.expense_id = e.id 
+		SELECT DISTINCT e.id, e.payer_id, e.payer_email, e.amount
+		FROM expenses e
+		LEFT JOIN expense_splits s ON s.expense_id = e.id
 		WHERE e.payer_id = $1 OR s.user_id = $1
 	`, userID)
-
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 	defer expRows.Close()
 
-	balancesMap := make(map[string]*dto.DebtBalance)
-
 	for expRows.Next() {
 		var expID, payerID, payerEmail string
-		var amount float64
-		if err := expRows.Scan(&expID, &payerID, &payerEmail, &amount); err != nil {
+		var totalAmount float64
+		if err := expRows.Scan(&expID, &payerID, &payerEmail, &totalAmount); err != nil {
 			continue
 		}
 
-		splitsRows, err := h.DB.Query("SELECT user_id, user_email, amount FROM expense_splits WHERE expense_id = $1", expID)
+		splitRows, err := h.DB.Query("SELECT user_id, user_email, amount FROM expense_splits WHERE expense_id = $1", expID)
 		if err != nil {
 			continue
 		}
 
-		for splitsRows.Next() {
+		splits := []dto.ExpenseSplit{}
+		for splitRows.Next() {
 			var splitUserID, splitUserEmail string
 			var splitAmount float64
-			if err := splitsRows.Scan(&splitUserID, &splitUserEmail, &splitAmount); err != nil {
+			if err := splitRows.Scan(&splitUserID, &splitUserEmail, &splitAmount); err != nil {
 				continue
 			}
+			splits = append(splits, dto.ExpenseSplit{
+				UserID:    splitUserID,
+				UserEmail: splitUserEmail,
+				Amount:    splitAmount,
+			})
+		}
+		splitRows.Close()
 
-			if payerID == userID {
-				if splitUserID != userID {
-					if _, ok := balancesMap[splitUserEmail]; !ok {
-						balancesMap[splitUserEmail] = &dto.DebtBalance{UserID: splitUserID, UserEmail: splitUserEmail, Balance: 0}
-					}
-					balancesMap[splitUserEmail].Balance += splitAmount
-				}
-			} else {
-				if splitUserID == userID {
-					if _, ok := balancesMap[payerEmail]; !ok {
-						balancesMap[payerEmail] = &dto.DebtBalance{UserID: payerID, UserEmail: payerEmail, Balance: 0}
-					}
-					balancesMap[payerEmail].Balance -= splitAmount
-				}
+		effectivePayerID := payerID
+		for _, split := range splits {
+			if normalizeEmail(split.UserEmail) == normalizeEmail(payerEmail) && split.UserID != "" {
+				effectivePayerID = split.UserID
+				break
 			}
 		}
-		splitsRows.Close()
+		youPaid := effectivePayerID == userID || normalizeEmail(payerEmail) == normalizeEmail(userEmail)
+
+		for _, split := range splits {
+			if youPaid {
+				if split.UserID != userID {
+					if _, ok := balancesMap[split.UserID]; !ok {
+						balancesMap[split.UserID] = &dto.DebtBalance{UserID: split.UserID, UserEmail: split.UserEmail, Balance: 0}
+					}
+					balancesMap[split.UserID].Balance += split.Amount
+				}
+			} else if split.UserID == userID {
+				if _, ok := balancesMap[effectivePayerID]; !ok {
+					balancesMap[effectivePayerID] = &dto.DebtBalance{UserID: effectivePayerID, UserEmail: payerEmail, Balance: 0}
+				}
+				balancesMap[effectivePayerID].Balance -= split.Amount
+			}
+		}
 	}
 
-	// 2. Fetch settlements to offset balances
+	// ------ Settlements ------
 	setRows, err := h.DB.Query(`
-		SELECT payer_id, payer_email, payee_id, payee_email, amount 
-		FROM settlements 
+		SELECT payer_id, payer_email, payee_id, payee_email, amount
+		FROM settlements
 		WHERE payer_id = $1 OR payee_id = $1
 	`, userID)
-
 	if err == nil {
+		defer setRows.Close()
 		for setRows.Next() {
 			var pID, pEmail, payeeID, payeeEmail string
 			var amount float64
-			if err := setRows.Scan(&pID, &pEmail, &payeeID, &payeeEmail, &amount); err == nil {
-				// User is payer: user paid someone (payee) → user is reducing debt they owe
-				// This decreases how much user is owed by payee (payee's balance goes down)
-				if pID == userID {
-					if _, ok := balancesMap[payeeEmail]; !ok {
-						balancesMap[payeeEmail] = &dto.DebtBalance{UserID: payeeID, UserEmail: payeeEmail, Balance: 0}
-					}
-					// User paid payee → payee is owed less by user → payee's balance towards user decreases
-					balancesMap[payeeEmail].Balance -= amount
-				} else if payeeID == userID {
-					// User is payee: someone (payer) paid user → payer's debt to user decreases
-					if _, ok := balancesMap[pEmail]; !ok {
-						balancesMap[pEmail] = &dto.DebtBalance{UserID: pID, UserEmail: pEmail, Balance: 0}
-					}
-					// Payer paid user → payer owes user less → payer's balance towards user increases (cancels debt)
-					balancesMap[pEmail].Balance += amount
+			if err := setRows.Scan(&pID, &pEmail, &payeeID, &payeeEmail, &amount); err != nil {
+				continue
+			}
+			if pID == userID {
+				if _, ok := balancesMap[payeeID]; !ok {
+					balancesMap[payeeID] = &dto.DebtBalance{UserID: payeeID, UserEmail: payeeEmail, Balance: 0}
 				}
+				balancesMap[payeeID].Balance += amount // user paid → reduces debt
+			} else if payeeID == userID {
+				if _, ok := balancesMap[pID]; !ok {
+					balancesMap[pID] = &dto.DebtBalance{UserID: pID, UserEmail: pEmail, Balance: 0}
+				}
+				balancesMap[pID].Balance -= amount // user received → reduces credit
 			}
 		}
-		setRows.Close()
 	}
 
+	// Round and filter
 	balances := []dto.DebtBalance{}
 	for _, b := range balancesMap {
-		b.Balance = float64(int(b.Balance*100)) / 100.0
-		if b.Balance != 0.0 {
+		b.Balance = math.Round(b.Balance*100) / 100
+		if b.Balance != 0 {
 			balances = append(balances, *b)
 		}
 	}
@@ -515,6 +556,8 @@ func (h *ExpenseHandler) SettleDebt(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Payee ID and positive amount are required", http.StatusBadRequest)
 		return
 	}
+
+	req.PayeeEmail = normalizeEmail(req.PayeeEmail)
 
 	var settlementID string
 	err = h.DB.QueryRow(`
