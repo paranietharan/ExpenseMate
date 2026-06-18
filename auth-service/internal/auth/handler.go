@@ -85,8 +85,9 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
-	if req.Email == "" || len(req.Password) < 8 {
-		http.Error(w, "Invalid email or password (min 8 characters)", http.StatusBadRequest)
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Email == "" || len(req.Password) < 8 || req.Name == "" {
+		http.Error(w, "Name, email, and password (min 8 characters) are required", http.StatusBadRequest)
 		return
 	}
 
@@ -96,8 +97,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := "INSERT INTO users (email, password_hash) VALUES ($1, $2)"
-	_, err = h.DB.Exec(query, req.Email, string(hashedPassword))
+	query := "INSERT INTO users (email, password_hash, name) VALUES ($1, $2, $3)"
+	_, err = h.DB.Exec(query, req.Email, string(hashedPassword), req.Name)
 	if err != nil {
 		if strings.Contains(err.Error(), "unique constraint") || strings.Contains(err.Error(), "duplicate key") {
 			http.Error(w, "User already exists", http.StatusConflict)

@@ -2243,300 +2243,470 @@ export default function Dashboard() {
       )}
 
       {/* Record Expense Modal */}
-      {showCreateExpenseModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-lg glass-panel p-6 rounded-2xl border border-white/10 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between border-b border-white/5 pb-2">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">Log Expense</h3>
-              <button
-                onClick={() => setShowCreateExpenseModal(false)}
-                className="text-zinc-400 hover:text-white font-bold text-xs"
-              >
-                ✕
-              </button>
-            </div>
+      {showCreateExpenseModal && (() => {
+        const amountVal = parseFloat(expenseAmount) || 0;
+        const grp = groups.find((g) => g.id === expenseGroupId);
+        const p2pFriend = friends.find((f) => f.email === selectedP2PFriendEmail);
+        const currentMembers = grp ? grp.members.map(m => ({ user_id: m.user_id, user_email: m.user_email })) : (p2pFriend ? [
+          { user_id: user?.userId || "", user_email: user?.email || "" },
+          { user_id: p2pFriend.user_id, user_email: p2pFriend.email }
+        ] : []);
+        const share = currentMembers.length > 0 ? amountVal / currentMembers.length : 0;
+        const customSum = currentMembers.reduce((sum, m) => sum + (parseFloat(expenseSplits[m.user_email]) || 0), 0);
+        const remaining = amountVal - customSum;
 
-            <form onSubmit={handleCreateExpense} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">
-                    Group Association
-                  </label>
-                  <select
-                    value={expenseGroupId}
-                    onChange={(e) => {
-                      setExpenseGroupId(e.target.value);
-                      setExpenseSplits({});
-                    }}
-                    className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white"
-                  >
-                    <option value="">No Group (Peer-to-Peer)</option>
-                    {groups.map((g) => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
-                    ))}
-                  </select>
-                </div>
+        return (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-lg glass-panel p-6 rounded-2xl border border-white/10 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Log Expense</h3>
+                <button
+                  onClick={() => setShowCreateExpenseModal(false)}
+                  className="text-zinc-400 hover:text-white font-bold text-xs"
+                >
+                  ✕
+                </button>
+              </div>
 
-                {!expenseGroupId && (
+              <form onSubmit={handleCreateExpense} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">
-                      Choose Friend
+                      Group Association
                     </label>
                     <select
-                      value={selectedP2PFriendEmail}
-                      onChange={(e) => setSelectedP2PFriendEmail(e.target.value)}
+                      value={expenseGroupId}
+                      onChange={(e) => {
+                        setExpenseGroupId(e.target.value);
+                        setExpenseSplits({});
+                      }}
                       className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white"
                     >
-                      <option value="">-- Choose friend --</option>
-                      {friends.map((f) => (
-                        <option key={f.user_id} value={f.email}>{f.name || f.email}</option>
+                      <option value="">No Group (Peer-to-Peer)</option>
+                      {groups.map((g) => (
+                        <option key={g.id} value={g.id}>{g.name}</option>
                       ))}
                     </select>
                   </div>
+
+                  {!expenseGroupId && (
+                    <div>
+                      <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">
+                        Choose Friend
+                      </label>
+                      <select
+                        value={selectedP2PFriendEmail}
+                        onChange={(e) => setSelectedP2PFriendEmail(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white"
+                      >
+                        <option value="">-- Choose friend --</option>
+                        {friends.map((f) => (
+                          <option key={f.user_id} value={f.email}>{f.name || f.email}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">
+                      Description / Bill Name
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={expenseDesc}
+                      onChange={(e) => setExpenseDesc(e.target.value)}
+                      placeholder="e.g. Grocery dinner shopping"
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">
+                      Total Amount ($ USD)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={expenseAmount}
+                      onChange={(e) => setExpenseAmount(e.target.value)}
+                      placeholder="120.00"
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white font-mono"
+                    />
+                  </div>
+                </div>
+
+                {/* Split type choosing */}
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">
+                    Split Configuration
+                  </label>
+                  <div className="flex gap-4 text-xs mt-1">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        checked={expenseSplitType === "equal"}
+                        onChange={() => setExpenseSplitType("equal")}
+                      />
+                      Split Equally
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        checked={expenseSplitType === "custom"}
+                        onChange={() => {
+                          setExpenseSplitType("custom");
+                          if (currentMembers.length > 0) {
+                            const equalShare = (amountVal / currentMembers.length).toFixed(2);
+                            const prefill: { [email: string]: string } = {};
+                            currentMembers.forEach((m) => {
+                              prefill[m.user_email] = equalShare;
+                            });
+                            setExpenseSplits(prefill);
+                          }
+                        }}
+                      />
+                      Split Manually / Custom
+                    </label>
+                  </div>
+                </div>
+
+                {/* Equal Split Preview */}
+                {expenseSplitType === "equal" && currentMembers.length > 0 && (
+                  <div className="p-3 bg-zinc-950/20 border border-white/5 rounded-xl space-y-1 animate-in fade-in duration-200">
+                    <span className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">
+                      Auto-Calculated Split Shares:
+                    </span>
+                    <div className="max-h-[120px] overflow-y-auto space-y-1 pr-1">
+                      {currentMembers.map((m, idx) => (
+                        <div key={idx} className="flex justify-between items-center text-xs text-zinc-300">
+                          <span className="truncate max-w-[220px]">{m.user_email === user?.email ? "You" : m.user_email}</span>
+                          <span className="font-mono font-semibold text-zinc-200">${share.toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
+
+                {/* Display list of split inputs if split custom */}
+                {expenseSplitType === "custom" && (
+                  <div className="p-3 bg-zinc-950/40 border border-white/5 rounded-xl space-y-3 animate-in fade-in duration-200">
+                    <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                      <span className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                        Custom split amounts:
+                      </span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono ${Math.abs(remaining) < 0.01 ? "bg-emerald-950/40 text-emerald-400 border border-emerald-900/30" : "bg-rose-950/40 text-rose-400 border border-rose-900/30"}`}>
+                        {Math.abs(remaining) < 0.01 ? "✓ Fully Split" : (remaining > 0 ? `Under: $${remaining.toFixed(2)}` : `Over: $${Math.abs(remaining).toFixed(2)}`)}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                      {/* For Group members splits */}
+                      {expenseGroupId ? (
+                        groups.find((g) => g.id === expenseGroupId)?.members.map((m, idx) => (
+                          <div key={idx} className="flex items-center justify-between gap-4 text-xs">
+                            <span className="text-zinc-300 truncate max-w-[200px]">{m.user_email === user?.email ? "You" : m.user_email}</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder="0.00"
+                              value={expenseSplits[m.user_email] || ""}
+                              onChange={(e) => setExpenseSplits({
+                                ...expenseSplits,
+                                [m.user_email]: e.target.value,
+                              })}
+                              className="w-24 px-2 py-1 bg-zinc-900 border border-zinc-800 rounded font-mono text-xs text-right text-white"
+                            />
+                          </div>
+                        ))
+                      ) : (
+                        // For Peer splits
+                        <>
+                          <div className="flex items-center justify-between gap-4 text-xs">
+                            <span className="text-zinc-300">You ({user?.email})</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder="0.00"
+                              value={expenseSplits[user?.email || ""] || ""}
+                              onChange={(e) => setExpenseSplits({
+                                ...expenseSplits,
+                                [user?.email || ""]: e.target.value,
+                              })}
+                              className="w-24 px-2 py-1 bg-zinc-900 border border-zinc-800 rounded font-mono text-xs text-right text-white"
+                            />
+                          </div>
+                          {selectedP2PFriendEmail && (
+                            <div className="flex items-center justify-between gap-4 text-xs">
+                              <span className="text-zinc-300 truncate max-w-[200px]">{selectedP2PFriendEmail}</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                placeholder="0.00"
+                                value={expenseSplits[selectedP2PFriendEmail] || ""}
+                                onChange={(e) => setExpenseSplits({
+                                  ...expenseSplits,
+                                  [selectedP2PFriendEmail]: e.target.value,
+                                })}
+                                className="w-24 px-2 py-1 bg-zinc-900 border border-zinc-800 rounded font-mono text-xs text-right text-white"
+                              />
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+
+                    <div className="flex justify-between items-center text-xs font-bold pt-2 border-t border-white/5">
+                      <span>Total Allocated: <span className="font-mono text-zinc-300">${customSum.toFixed(2)}</span> / <span className="font-mono text-zinc-400">${amountVal.toFixed(2)}</span></span>
+                    </div>
+
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (currentMembers.length > 0) {
+                            const equalShare = (amountVal / currentMembers.length).toFixed(2);
+                            const prefill: { [email: string]: string } = {};
+                            currentMembers.forEach((m) => {
+                              prefill[m.user_email] = equalShare;
+                            });
+                            setExpenseSplits(prefill);
+                          }
+                        }}
+                        className="flex-1 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[10px] text-zinc-300 hover:text-white border border-zinc-700/50 cursor-pointer transition-colors"
+                      >
+                        Reset to Equal
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const emptyMembers = currentMembers.filter(m => !expenseSplits[m.user_email] || parseFloat(expenseSplits[m.user_email]) === 0);
+                          if (emptyMembers.length > 0 && remaining > 0) {
+                            const distributeShare = (remaining / emptyMembers.length).toFixed(2);
+                            const newSplits = { ...expenseSplits };
+                            emptyMembers.forEach(m => {
+                              newSplits[m.user_email] = distributeShare;
+                            });
+                            setExpenseSplits(newSplits);
+                          }
+                        }}
+                        className="flex-1 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[10px] text-zinc-300 hover:text-white border border-zinc-700/50 cursor-pointer transition-colors"
+                      >
+                        Distribute Remaining
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={actionLoading}
+                  className="w-full py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 cursor-pointer disabled:opacity-50"
+                >
+                  Record Expense
+                </button>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Edit Expense Modal */}
+      {showEditExpenseModal && (() => {
+        const amountVal = parseFloat(expenseAmount) || 0;
+        const editingExpense = expenses.find((ex) => ex.id === editingExpenseId);
+        const currentMembers = editingExpense ? editingExpense.splits.map(s => ({ user_id: s.user_id, user_email: s.user_email })) : [];
+        const share = currentMembers.length > 0 ? amountVal / currentMembers.length : 0;
+        const customSum = currentMembers.reduce((sum, m) => sum + (parseFloat(expenseSplits[m.user_email]) || 0), 0);
+        const remaining = amountVal - customSum;
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-lg glass-panel p-6 rounded-2xl border border-white/10 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Modify Expense</h3>
+                <button
+                  onClick={() => {
+                    setShowEditExpenseModal(false);
+                    setEditingExpenseId("");
+                    setExpenseSplits({});
+                  }}
+                  className="text-zinc-400 hover:text-white font-bold text-xs"
+                >
+                  ✕
+                </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <form onSubmit={handleEditExpense} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">
+                      Description
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={expenseDesc}
+                      onChange={(e) => setExpenseDesc(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">
+                      Total Amount ($ USD)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={expenseAmount}
+                      onChange={(e) => setExpenseAmount(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white font-mono"
+                    />
+                  </div>
+                </div>
+
+                {/* Split type choosing */}
                 <div>
                   <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">
-                    Description / Bill Name
+                    Split Configuration
                   </label>
-                  <input
-                    type="text"
-                    required
-                    value={expenseDesc}
-                    onChange={(e) => setExpenseDesc(e.target.value)}
-                    placeholder="e.g. Grocery dinner shopping"
-                    className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white"
-                  />
+                  <div className="flex gap-4 text-xs mt-1">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        checked={expenseSplitType === "equal"}
+                        onChange={() => setExpenseSplitType("equal")}
+                      />
+                      Split Equally
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        checked={expenseSplitType === "custom"}
+                        onChange={() => {
+                          setExpenseSplitType("custom");
+                          if (currentMembers.length > 0) {
+                            const equalShare = (amountVal / currentMembers.length).toFixed(2);
+                            const prefill: { [email: string]: string } = {};
+                            currentMembers.forEach((m) => {
+                              prefill[m.user_email] = equalShare;
+                            });
+                            setExpenseSplits(prefill);
+                          }
+                        }}
+                      />
+                      Split Manually / Custom
+                    </label>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">
-                    Total Amount ($ USD)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={expenseAmount}
-                    onChange={(e) => setExpenseAmount(e.target.value)}
-                    placeholder="120.00"
-                    className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white font-mono"
-                  />
-                </div>
-              </div>
+                {/* Equal Split Preview */}
+                {expenseSplitType === "equal" && currentMembers.length > 0 && (
+                  <div className="p-3 bg-zinc-950/20 border border-white/5 rounded-xl space-y-1 animate-in fade-in duration-200">
+                    <span className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">
+                      Auto-Calculated Split Shares:
+                    </span>
+                    <div className="max-h-[120px] overflow-y-auto space-y-1 pr-1">
+                      {currentMembers.map((m, idx) => (
+                        <div key={idx} className="flex justify-between items-center text-xs text-zinc-300">
+                          <span className="truncate max-w-[220px]">{m.user_email === user?.email ? "You" : m.user_email}</span>
+                          <span className="font-mono font-semibold text-zinc-200">${share.toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-              {/* Split type choosing */}
-              <div>
-                <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">
-                  Split Configuration
-                </label>
-                <div className="flex gap-4 text-xs mt-1">
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      checked={expenseSplitType === "equal"}
-                      onChange={() => setExpenseSplitType("equal")}
-                    />
-                    Split Equally
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      checked={expenseSplitType === "custom"}
-                      onChange={() => setExpenseSplitType("custom")}
-                    />
-                    Split Manually / Custom
-                  </label>
-                </div>
-              </div>
+                {/* Display list of split inputs if split custom */}
+                {expenseSplitType === "custom" && (
+                  <div className="p-3 bg-zinc-950/40 border border-white/5 rounded-xl space-y-3 animate-in fade-in duration-200">
+                    <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                      <span className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                        Custom split amounts:
+                      </span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono ${Math.abs(remaining) < 0.01 ? "bg-emerald-950/40 text-emerald-400 border border-emerald-900/30" : "bg-rose-950/40 text-rose-400 border border-rose-900/30"}`}>
+                        {Math.abs(remaining) < 0.01 ? "✓ Fully Split" : (remaining > 0 ? `Under: $${remaining.toFixed(2)}` : `Over: $${Math.abs(remaining).toFixed(2)}`)}
+                      </span>
+                    </div>
 
-              {/* Display list of split inputs if split custom */}
-              {expenseSplitType === "custom" && (
-                <div className="p-3 bg-zinc-950/40 border border-white/5 rounded-xl space-y-2 max-h-[160px] overflow-y-auto">
-                  <span className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">
-                    Custom splits amounts:
-                  </span>
-                  
-                  {/* For Group members splits */}
-                  {expenseGroupId ? (
-                    groups.find((g) => g.id === expenseGroupId)?.members.map((m, idx) => (
-                      <div key={idx} className="flex items-center justify-between gap-4 text-xs">
-                        <span className="text-zinc-300 truncate max-w-[200px]">{m.user_email}</span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          placeholder="0.00"
-                          value={expenseSplits[m.user_email] || ""}
-                          onChange={(e) => setExpenseSplits({
-                            ...expenseSplits,
-                            [m.user_email]: e.target.value,
-                          })}
-                          className="w-24 px-2 py-1 bg-zinc-900 border border-zinc-800 rounded font-mono text-xs text-right text-white"
-                        />
-                      </div>
-                    ))
-                  ) : (
-                    // For Peer splits
-                    <>
-                      <div className="flex items-center justify-between gap-4 text-xs">
-                        <span className="text-zinc-300">You ({user?.email})</span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          placeholder="0.00"
-                          value={expenseSplits[user?.email || ""] || ""}
-                          onChange={(e) => setExpenseSplits({
-                            ...expenseSplits,
-                            [user?.email || ""]: e.target.value,
-                          })}
-                          className="w-24 px-2 py-1 bg-zinc-900 border border-zinc-800 rounded font-mono text-xs text-right text-white"
-                        />
-                      </div>
-                      {selectedP2PFriendEmail && (
-                        <div className="flex items-center justify-between gap-4 text-xs">
-                          <span className="text-zinc-300 truncate max-w-[200px]">{selectedP2PFriendEmail}</span>
+                    <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                      {currentMembers.map((m, idx) => (
+                        <div key={idx} className="flex items-center justify-between gap-4 text-xs">
+                          <span className="text-zinc-300 truncate max-w-[200px]">{m.user_email === user?.email ? "You" : m.user_email}</span>
                           <input
                             type="number"
                             step="0.01"
                             placeholder="0.00"
-                            value={expenseSplits[selectedP2PFriendEmail] || ""}
+                            value={expenseSplits[m.user_email] || ""}
                             onChange={(e) => setExpenseSplits({
                               ...expenseSplits,
-                              [selectedP2PFriendEmail]: e.target.value,
+                              [m.user_email]: e.target.value,
                             })}
                             className="w-24 px-2 py-1 bg-zinc-900 border border-zinc-800 rounded font-mono text-xs text-right text-white"
                           />
                         </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={actionLoading}
-                className="w-full py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 cursor-pointer disabled:opacity-50"
-              >
-                Record Expense
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Expense Modal */}
-      {showEditExpenseModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-lg glass-panel p-6 rounded-2xl border border-white/10 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between border-b border-white/5 pb-2">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">Modify Expense</h3>
-              <button
-                onClick={() => {
-                  setShowEditExpenseModal(false);
-                  setEditingExpenseId("");
-                  setExpenseSplits({});
-                }}
-                className="text-zinc-400 hover:text-white font-bold text-xs"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleEditExpense} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">
-                    Description
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={expenseDesc}
-                    onChange={(e) => setExpenseDesc(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">
-                    Total Amount ($ USD)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={expenseAmount}
-                    onChange={(e) => setExpenseAmount(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white font-mono"
-                  />
-                </div>
-              </div>
-
-              {/* Split type choosing */}
-              <div>
-                <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">
-                  Split Configuration
-                </label>
-                <div className="flex gap-4 text-xs mt-1">
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      checked={expenseSplitType === "equal"}
-                      onChange={() => setExpenseSplitType("equal")}
-                    />
-                    Split Equally
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      checked={expenseSplitType === "custom"}
-                      onChange={() => setExpenseSplitType("custom")}
-                    />
-                    Split Manually / Custom
-                  </label>
-                </div>
-              </div>
-
-              {/* Display list of split inputs if split custom */}
-              {expenseSplitType === "custom" && (
-                <div className="p-3 bg-zinc-950/40 border border-white/5 rounded-xl space-y-2 max-h-[160px] overflow-y-auto">
-                  <span className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">
-                    Custom splits amounts:
-                  </span>
-                  
-                  {expenses.find((ex) => ex.id === editingExpenseId)?.splits.map((s, idx) => (
-                    <div key={idx} className="flex items-center justify-between gap-4 text-xs">
-                      <span className="text-zinc-300 truncate max-w-[200px]">{s.user_email}</span>
-                      <input
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={expenseSplits[s.user_email] || ""}
-                        onChange={(e) => setExpenseSplits({
-                          ...expenseSplits,
-                          [s.user_email]: e.target.value,
-                        })}
-                        className="w-24 px-2 py-1 bg-zinc-900 border border-zinc-800 rounded font-mono text-xs text-right text-white"
-                      />
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
 
-              <button
-                type="submit"
-                disabled={actionLoading}
-                className="w-full py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 cursor-pointer disabled:opacity-50"
-              >
-                Save Changes
-              </button>
-            </form>
+                    <div className="flex justify-between items-center text-xs font-bold pt-2 border-t border-white/5">
+                      <span>Total Allocated: <span className="font-mono text-zinc-300">${customSum.toFixed(2)}</span> / <span className="font-mono text-zinc-400">${amountVal.toFixed(2)}</span></span>
+                    </div>
+
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (currentMembers.length > 0) {
+                            const equalShare = (amountVal / currentMembers.length).toFixed(2);
+                            const prefill: { [email: string]: string } = {};
+                            currentMembers.forEach((m) => {
+                              prefill[m.user_email] = equalShare;
+                            });
+                            setExpenseSplits(prefill);
+                          }
+                        }}
+                        className="flex-1 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[10px] text-zinc-300 hover:text-white border border-zinc-700/50 cursor-pointer transition-colors"
+                      >
+                        Reset to Equal
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const emptyMembers = currentMembers.filter(m => !expenseSplits[m.user_email] || parseFloat(expenseSplits[m.user_email]) === 0);
+                          if (emptyMembers.length > 0 && remaining > 0) {
+                            const distributeShare = (remaining / emptyMembers.length).toFixed(2);
+                            const newSplits = { ...expenseSplits };
+                            emptyMembers.forEach(m => {
+                              newSplits[m.user_email] = distributeShare;
+                            });
+                            setExpenseSplits(newSplits);
+                          }
+                        }}
+                        className="flex-1 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[10px] text-zinc-300 hover:text-white border border-zinc-700/50 cursor-pointer transition-colors"
+                      >
+                        Distribute Remaining
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={actionLoading}
+                  className="w-full py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 cursor-pointer disabled:opacity-50"
+                >
+                  Save Changes
+                </button>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Record Settlement Modal */}
       {showCreateSettlementModal && (

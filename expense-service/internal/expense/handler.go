@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"expense-service/internal/database"
 	"expense-service/internal/dto"
 	"expense-service/internal/rabbitmq"
 )
@@ -36,9 +35,6 @@ func (h *ExpenseHandler) getUserInfo(r *http.Request) (string, string, error) {
 	if userEmail == "" {
 		userEmail = "user@example.com"
 	}
-
-	// Trigger lazy-seeding for new users
-	database.SeedUserIfNew(userID, userEmail)
 
 	return userID, userEmail, nil
 }

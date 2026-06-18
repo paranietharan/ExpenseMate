@@ -7,6 +7,7 @@ import CustomAlert from "../components/CustomAlert";
 
 export default function Register() {
   const router = useRouter();
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -34,7 +35,13 @@ export default function Register() {
     setAlertMessage("");
 
     // Client-side validations
+    const trimmedName = name.trim();
     const trimmedEmail = email.trim();
+    if (!trimmedName) {
+      setAlertType("warning");
+      setAlertMessage("Name is required.");
+      return;
+    }
     if (!trimmedEmail) {
       setAlertType("warning");
       setAlertMessage("Email is required.");
@@ -52,7 +59,7 @@ export default function Register() {
       const res = await fetch("/api/v1/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: trimmedEmail, password }),
+        body: JSON.stringify({ email: trimmedEmail, password, name: trimmedName }),
       });
 
       if (res.ok) {
@@ -139,6 +146,22 @@ export default function Register() {
 
         {step === 1 ? (
           <form onSubmit={handleRegister} className="space-y-6">
+            <div>
+              <label htmlFor="name" className="block text-xs font-semibold text-zinc-400 tracking-wider uppercase mb-2">
+                Full Name
+              </label>
+              <input
+                id="name"
+                type="text"
+                required
+                disabled={loading}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-zinc-950/50 border border-zinc-800 text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-colors disabled:opacity-50 text-sm"
+                placeholder="John Doe"
+              />
+            </div>
+
             <div>
               <label htmlFor="email" className="block text-xs font-semibold text-zinc-400 tracking-wider uppercase mb-2">
                 Email Address
