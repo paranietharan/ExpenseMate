@@ -1,0 +1,24 @@
+# Ignore git repository metadata and configuration
+.git
+.gitignore
+
+# Ignore docker files
+Dockerfile
+docker-compose*
+
+# Ignore local compiled binaries and build artifacts
+main
+bin/
+out/
+dist/
+
+# Ignore IDE and editor configurations
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Ignore testing and coverage files
+*.out
+*.test
