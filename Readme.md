@@ -20,7 +20,7 @@
 ## Video Walkthrough
 Watch the video demonstration of the ExpenseMate features in action:
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/1BA3QmWqUsE?si=NOFYx7ruHrOY2jwP" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+[![ExpenseMate Demo Video Preview](https://markdown-videos-api.jorgenkh.no/youtube/1BA3QmWqUsE)](https://www.youtube.com/watch?v=1BA3QmWqUsE)
 
 ---
 
